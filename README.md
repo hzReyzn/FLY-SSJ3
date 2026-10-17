@@ -9,6 +9,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/hzReyzn/FLY-SSJ3/main
 ## Uso
 
 - El panel compacto empieza en **OFF**. Toca la fila para activar o desactivar el vuelo.
+- **SPEED:** toca el número para escribir la velocidad y confirma con Enter o sal del campo. Los botones **− / +** y la rueda del ratón sobre esa fila ajustan de **2 en 2**. El cambio se aplica durante el vuelo y se conserva al reaparecer. Empieza en **58**; **0** mantiene la suspensión. No hay máximo configurado: se aceptan valores no negativos y finitos que Roblox pueda representar; entradas vacías, inválidas o infinitas restauran el último valor.
 - **Android:** joystick normal. **PC:** W, A, S, D. Dirige la cámara hacia arriba o abajo y avanza para cambiar de altura. Al soltar el movimiento, frena suavemente y queda flotando.
 - Arrastra el título **FLY DBZ** para mover el panel. La **×** apaga el vuelo y retira todos los recursos de esta instancia del script.
 - Si mueres con el vuelo en ON, la preferencia se conserva y el vuelo vuelve al reaparecer. Si estaba OFF, sigue OFF.
@@ -16,9 +17,9 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/hzReyzn/FLY-SSJ3/main
 
 ## Aura
 
-Aura local amarilla y semidorada, inspirada en la referencia SSJ3: tres alturas de llamas, núcleo amarillo claro, puntas doradas, pequeñas chispas y luz cercana. Se revela desde los pies durante 0.9 s y se desvanece durante 0.6 s al apagar el vuelo. No incluye audio, vídeo ni efectos globales de iluminación.
+Aura local amarilla y semidorada, inspirada en la referencia SSJ3: llamas más grandes y saturadas, ocho columnas curvas de energía con núcleo fino, textura ascendente, puntas de distintas alturas sobre la cabeza y chispas. Las capas se ensanchan alrededor del torso y oscilan con fases diferentes. La mezcla de color conserva contraste bajo el cielo claro sin convertir todo el cuerpo en un bloque blanco. Se revela desde los pies durante 0.9 s y se desvanece durante 0.6 s al apagar el vuelo, sin colapsar las puntas durante el desvanecimiento. No incluye audio, vídeo ni efectos globales de iluminación.
 
-Los 16 emisores se reutilizan por personaje. Roblox simula las partículas; la intensidad y el encendido se actualizan a 30 Hz. No se crean partículas manuales, instancias ni secuencias nuevas cada fotograma. Los controles físicos se actualizan antes de la simulación mediante `LinearVelocity` y `AlignOrientation`.
+Los 22 emisores y los 16 `Beam` se reutilizan por personaje. Las vidas y tasas de emisión mantienen un presupuesto teórico inferior a 240 partículas activas al completar el encendido. Roblox simula las partículas y el desplazamiento de las texturas; la intensidad y la geometría de las capas se actualizan a 30 Hz. No se crean instancias ni secuencias nuevas cada fotograma. Los controles físicos se actualizan antes de la simulación mediante `LinearVelocity` y `AlignOrientation`.
 
 ## Animaciones y visibilidad
 
@@ -38,6 +39,6 @@ Según la [documentación de Animator](https://create.roblox.com/docs/reference/
 python tests/run.py /ruta/a/luau
 ```
 
-Compilación con Luau y 20 pruebas deterministas: estado inicial, movimiento de teclado y joystick, cámara inclinada, pausa al escribir o perder foco, respawn, piezas tardías/reemplazadas, permisos de animación, aparición y retirada del aura, reejecución, cierre y restauración de velocidad. El arnés comprueba la lógica y los recursos; **no ejecuta física, renderiza partículas ni simula la replicación de Roblox**.
+Compilación con Luau y 26 pruebas deterministas: estado inicial, movimiento de teclado y joystick, cámara inclinada, pausa al escribir o perder foco, respawn, piezas tardías/reemplazadas, permisos de animación, aparición y retirada del aura, geometría ascendente y movimiento de las capas, objetos reutilizados, velocidad editable, pasos de 2, rueda, valores grandes/decimales/inválidos, reejecución, cierre y restauración de velocidad. El arnés comprueba la lógica y los recursos; **no ejecuta física, renderiza partículas ni simula la replicación de Roblox**.
 
 Pendiente de comprobación en Roblox: aspecto final del fuego en Android, vuelo en la experiencia de destino, efectividad del No Fall Damage y visibilidad del paquete desde un segundo cliente R15 autorizado. El código no modifica los scripts del repositorio Reyzn X.

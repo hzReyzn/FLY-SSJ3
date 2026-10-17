@@ -39,7 +39,13 @@ local function newWorld()
     env.warn=function(...)W.warnings[#W.warnings+1]=table.concat({...}," ")end
     env.print=function()end
     local vec={};vec.__index=vec
-    function vec.new(x,y,z)return setmetatable({X=x or 0,Y=y or 0,Z=z or 0},vec)end
+    local function component(n)
+        n=n or 0
+        if n>3.4028234663852886e38 then return math.huge end
+        if n< -3.4028234663852886e38 then return -math.huge end
+        return n
+    end
+    function vec.new(x,y,z)return setmetatable({X=component(x),Y=component(y),Z=component(z)},vec)end
     function vec.__add(a,b)return vec.new(a.X+b.X,a.Y+b.Y,a.Z+b.Z)end
     function vec.__sub(a,b)return vec.new(a.X-b.X,a.Y-b.Y,a.Z-b.Z)end
     function vec.__mul(a,b)if type(a)=="number" then a,b=b,a end;return vec.new(a.X*b,a.Y*b,a.Z*b)end
@@ -162,6 +168,10 @@ local function newWorld()
     function methods:ChangeState(s)local old=self.State;self.State=s;self.StateChanged:Fire(old,s)end
     function methods:GetState()return self.State end
     function methods:GetConnectedParts()return {}end
+    function methods:IsFocused()return W.textFocused==self end
+    function methods:ReleaseFocus()
+        if W.textFocused==self then W.textFocused=nil;self.FocusLost:Fire(false)end
+    end
     function methods:Play()self.IsPlaying=true;self.Playing=true end
     function methods:Pause()self.IsPlaying=false;self.Playing=false end
     function methods:Resume()self.IsPlaying=true;self.Playing=true end

@@ -30,11 +30,12 @@ return function(source)
         local w,g,_,h,r=launch();w.step(30)
         assert(find(g,'State').Text=='OFF' and not g:GetAttribute('FlightEnabled'))
         assert(g:GetAttribute('NoFallDamageArmed') and g:GetAttribute('Version')=='1.0')
-        assert(find(g,'Window').Size.X.Offset==228 and find(g,'Window').Size.Y.Offset==96)
+        assert(find(g,'Window').Size.X.Offset==228 and find(g,'Window').Size.Y.Offset==146)
         assert(find(g,'FlightToggle').Size.Y.Offset>=40)
         assert(not r:FindFirstChild('FlyDBZVelocity') and not h.PlatformStand)
         for _,o in ipairs(g:GetDescendants()) do
-            if o.Text~='' then assert(o.Text=='FLY DBZ' or o.Text=='OFF' or o.Text=='×') end
+            if o.Text~='' then assert(o.Text=='FLY DBZ' or o.Text=='OFF' or o.Text=='×'
+                or o.Text=='SPEED' or o.Text=='58' or o.Text=='−' or o.Text=='+') end
         end
         g:Destroy();noOwnedObjects(w)
     end)
@@ -108,7 +109,7 @@ return function(source)
     test('aura reveals feet first, then upper bands, fades smoothly and is pooled', function()
         local w,g,_,_,r=launch();local emitters={}
         for _,o in ipairs(r:GetDescendants()) do if o:IsA('ParticleEmitter') then emitters[#emitters+1]=o end end
-        assert(#emitters==16)
+        assert(#emitters==22)
         for _,o in ipairs(emitters) do assert(not o.Enabled and o.LocalTransparencyModifier==1) end
         click(g);w.step(7)
         local bottom,top
@@ -130,7 +131,7 @@ return function(source)
         local w,g,c=launch();click(g);w.step(60)
         for _,o in ipairs(w.objects) do
             assert(o.ClassName~='Sound' and o.ClassName~='BloomEffect' and o.ClassName~='ColorCorrectionEffect')
-            if o:IsA('ParticleEmitter') or o:IsA('PointLight') then assert(o:IsDescendantOf(c)) end
+            if o:IsA('ParticleEmitter') or o:IsA('PointLight') or o:IsA('Beam') then assert(o:IsDescendantOf(c)) end
         end
         g:Destroy()
     end)
@@ -227,6 +228,111 @@ return function(source)
             near(window.Position.X.Offset,p.X.Offset+50)
         end
         g:Destroy()
+    end)
+    test('speed buttons change by two without toggling flight; wheel changes one step', function()
+        local w,g=launch();assert(g:GetAttribute('FlightSpeed')==58)
+        click(g,'SpeedUp');assert(find(g,'SpeedValue').Text=='60')
+        click(g,'SpeedDown');assert(find(g,'SpeedValue').Text=='58')
+        find(g,'SpeedControl').MouseEnter:Fire()
+        w.services.UserInputService.InputChanged:Fire({UserInputType=w.env.Enum.UserInputType.MouseWheel,Position=w.env.Vector3.new(0,0,1)})
+        assert(g:GetAttribute('FlightSpeed')==60)
+        w.services.UserInputService.InputChanged:Fire({UserInputType=w.env.Enum.UserInputType.MouseWheel,Position=w.env.Vector3.new(0,0,-1)})
+        assert(g:GetAttribute('FlightSpeed')==58 and not g:GetAttribute('FlightEnabled'))
+        find(g,'SpeedControl').MouseLeave:Fire()
+        w.services.UserInputService.InputChanged:Fire({UserInputType=w.env.Enum.UserInputType.MouseWheel,Position=w.env.Vector3.new(0,0,1)})
+        assert(g:GetAttribute('FlightSpeed')==58,'wheel changed speed outside the control')
+        assert(find(g,'SpeedUp').Size.Y.Offset>=40 and find(g,'SpeedDown').Size.Y.Offset>=40)
+        g:Destroy()
+    end)
+    test('manual speed applies live, accepts decimals and values above ordinary caps', function()
+        local w,g,_,_,r=launch();click(g);w.keys.W=true
+        local box=find(g,'SpeedValue')
+        box.Text='120';box.FocusLost:Fire(true);w.step(90)
+        near(find(r,'FlyDBZVelocity').VectorVelocity.Z,-120)
+        box.Text=' 72,5 ';box.FocusLost:Fire(false);w.step(90)
+        near(find(r,'FlyDBZVelocity').VectorVelocity.Z,-72.5)
+        for _,value in ipairs({'2500','1000000','1e20'}) do
+            box.Text=value;box.FocusLost:Fire(true)
+            assert(g:GetAttribute('FlightSpeed')==tonumber(value),'arbitrary maximum imposed')
+        end
+        w.step(120);local velocity=find(r,'FlyDBZVelocity').VectorVelocity
+        assert(velocity.Z< -9.9e19 and velocity.Z> -math.huge)
+        -- Large opposite directions must not overflow interpolation.
+        box.Text='3e38';box.FocusLost:Fire(true);w.step(120)
+        w.keys={S=true};w.step(120)
+        velocity=find(r,'FlyDBZVelocity').VectorVelocity
+        assert(velocity.Z>2.9e38 and velocity.Z<math.huge)
+        assert(velocity.X==velocity.X and velocity.Y==velocity.Y)
+        g:Destroy()
+    end)
+    test('invalid or nonrepresentable speed restores last value; zero means hover', function()
+        local w,g,_,_,r=launch();local box=find(g,'SpeedValue')
+        for _,invalid in ipairs({'','abc','-12','NaN','inf','1e309','1e300'}) do
+            box.Text=invalid;box.FocusLost:Fire(true)
+            assert(box.Text=='58' and g:GetAttribute('FlightSpeed')==58,invalid)
+        end
+        box.Text='0';box.FocusLost:Fire(false);click(g,'SpeedDown')
+        assert(box.Text=='0','negative speed should not reverse controls')
+        click(g);w.keys.W=true;w.step(30);near(find(r,'FlyDBZVelocity').VectorVelocity.Magnitude,0)
+        click(g,'SpeedUp');assert(box.Text=='2');g:Destroy()
+    end)
+    test('focused editing plus step commits entry once; speed survives respawn', function()
+        local w,g=launch();local box=find(g,'SpeedValue')
+        w.textFocused=box;box.Text='140';click(g,'SpeedUp')
+        assert(w.textFocused==nil and g:GetAttribute('FlightSpeed')==142 and box.Text=='142')
+        box.FocusLost:Fire(false);assert(g:GetAttribute('FlightSpeed')==142)
+        click(g);local _,_,r=w.character();w.keys.W=true;w.step(120)
+        near(find(r,'FlyDBZVelocity').VectorVelocity.Z,-142)
+        click(g);click(g);assert(box.Text=='142')
+        click(g,'Close');click(g,'SpeedUp');box.Text='600';box.FocusLost:Fire(true)
+        assert(g:GetAttribute('FlightSpeed')==142,'closed controller accepted input')
+        w.step(60);noOwnedObjects(w)
+    end)
+    test('layered ribbons grow from feet above head and move independently', function()
+        local w,g,_,_,r=launch();local ribbons={}
+        for _,o in ipairs(r:GetDescendants()) do if o:IsA('Beam') then ribbons[#ribbons+1]=o end end
+        assert(#ribbons==16)
+        for _,o in ipairs(ribbons) do
+            assert(not o.Enabled and o.LocalTransparencyModifier==1 and o.Width0==0)
+            assert(o.FaceCamera and o.Segments>=12 and o.TextureSpeed>0)
+            assert(o.Attachment0.Position.Y==o.Attachment1.Position.Y)
+        end
+        click(g);w.step(7)
+        local first=ribbons[1];local base=first.Attachment0.Position.Y
+        assert(first.Attachment1.Position.Y>base and first.Attachment1.Position.Y<1)
+        assert(first.Enabled and first.LocalTransparencyModifier>0)
+        w.step(60);local points={}
+        for i,o in ipairs(ribbons) do
+            assert(o.Enabled and o.LocalTransparencyModifier==0)
+            assert(o.Attachment1.Position.Y>2.4 and o.CurveSize0>1 and o.Width0>0)
+            points[i]=o.Attachment1.Position
+        end
+        w.step(15)
+        for i,o in ipairs(ribbons) do assert(o.Attachment1.Position~=points[i],'static energy ribbon') end
+        local upper=first.Attachment1.Position.Y
+        click(g);w.step(8)
+        assert(first.LocalTransparencyModifier>0 and first.LocalTransparencyModifier<1)
+        assert(math.abs(first.Attachment1.Position.Y-upper)<0.6,'fade collapsed the aura instead of fading')
+        w.step(40)
+        for _,o in ipairs(ribbons) do assert(not o.Enabled and o.LocalTransparencyModifier==1) end
+        g:Destroy();noOwnedObjects(w)
+    end)
+    test('aura stays bounded, warm and visible without increasing objects each frame', function()
+        local w,g,_,_,r=launch();click(g);w.step(70)
+        local countBefore=#w.objects;local particles=0
+        local yellowCore=false
+        for _,o in ipairs(r:GetDescendants()) do
+            if o:IsA('ParticleEmitter') then
+                particles+=o.Rate*o.Lifetime[2]
+                if o.Name=='FlyDBZFlame' then assert(o.LightEmission<1 and o.Brightness>=3) end
+            end
+            if o.Name=='FlyDBZEnergyCore' then yellowCore=o.Texture=='' end
+        end
+        assert(yellowCore and particles<260,'unbounded particle load')
+        w.step(180);assert(#w.objects==countBefore,'VFX allocated instances every frame')
+        click(g);w.step(45);local lamp=find(r,'FlyDBZLight')
+        assert(not lamp.Enabled and lamp.Brightness==0)
+        g:Destroy();noOwnedObjects(w)
     end)
     print(tostring(count)..' behavioral tests passed; Roblox visual/physics validation remains manual.')
 end

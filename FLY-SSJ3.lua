@@ -31,6 +31,7 @@ local connections, characterConnections, bodyConnections = {}, {}, {}
 local activeTweens, reported = {}, {}
 local currentCharacter, body, controls
 local pendingVelocity
+local flightSpeed = CONFIG.Speed
 local function make(class, properties, parent)
     local object = Instance.new(class)
     for key, value in pairs(properties or {}) do object[key] = value end
@@ -72,7 +73,7 @@ end
 local C = Color3.fromRGB
 local ZERO = Vector3.zero
 
--- Compact touch-friendly surface: a draggable heading and one flight switch.
+-- Compact touch-friendly surface: heading, flight switch and editable speed.
 local gui = make("ScreenGui", {
     Name = "FlyDBZ", ResetOnSpawn = false, IgnoreGuiInset = false,
     DisplayOrder = 72, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
@@ -81,9 +82,10 @@ gui:SetAttribute("Version", "1.0")
 gui:SetAttribute("FlightEnabled", false)
 gui:SetAttribute("NoFallDamageArmed", game.PlaceId == CONFIG.NoFallPlaceId)
 gui:SetAttribute("AnimationStatus", "Idle")
+gui:SetAttribute("FlightSpeed", flightSpeed)
 local window = make("CanvasGroup", {
     Name = "Window", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -22, 0, 80),
-    Size = UDim2.fromOffset(228, 96), BackgroundColor3 = C(19, 20, 24),
+    Size = UDim2.fromOffset(228, 146), BackgroundColor3 = C(19, 20, 24),
     BackgroundTransparency = 0.03, GroupTransparency = 1, BorderSizePixel = 0,
 }, gui)
 round(window, 15)
@@ -158,24 +160,110 @@ local function paintToggle(enabled)
     tween(toggleScale, 0.24, {Scale = 1})
 end
 
--- A fixed pool of native 3D emitters. Lower bands reveal first; no frame-by-frame
--- creation or cloning. All particles belong to the local character and have no sound.
+local speedRow = make("Frame", {
+    Name = "SpeedControl", Position = UDim2.fromOffset(12, 93), Size = UDim2.new(1, -24, 0, 42),
+    BackgroundColor3 = C(26, 27, 33), BorderSizePixel = 0, Active = true,
+}, window)
+round(speedRow, 10)
+local speedStroke = make("UIStroke", {Color = C(77, 80, 91), Transparency = 0.6, Thickness = 1}, speedRow)
+local function speedButton(name, text, position)
+    local button = make("TextButton", {
+        Name = name, Text = text, Position = position, Size = UDim2.fromOffset(42, 42),
+        Font = Enum.Font.Gotham, TextSize = 22, TextColor3 = C(218, 218, 226),
+        BackgroundColor3 = C(255, 222, 122), BackgroundTransparency = 1,
+        BorderSizePixel = 0, AutoButtonColor = false,
+    }, speedRow)
+    round(button, 10)
+    return button
+end
+local speedDown = speedButton("SpeedDown", "−", UDim2.fromOffset(0, 0))
+local speedUp = speedButton("SpeedUp", "+", UDim2.new(1, -42, 0, 0))
+local speedBox = make("TextBox", {
+    Name = "SpeedValue", Position = UDim2.fromOffset(42, 0), Size = UDim2.new(1, -84, 1, 0),
+    BackgroundTransparency = 1, Text = tostring(flightSpeed), PlaceholderText = "58",
+    TextColor3 = C(240, 237, 225), PlaceholderColor3 = C(120, 120, 130),
+    Font = Enum.Font.GothamMedium, TextSize = 16, TextScaled = true,
+    ClearTextOnFocus = false, MultiLine = false, TextEditable = true,
+}, speedRow)
+make("UIPadding", {PaddingTop = UDim.new(0, 15), PaddingBottom = UDim.new(0, 4)}, speedBox)
+make("UITextSizeConstraint", {MinTextSize = 10, MaxTextSize = 16}, speedBox)
+make("TextLabel", {
+    Name = "SpeedLabel", Position = UDim2.fromOffset(42, 3), Size = UDim2.new(1, -84, 0, 12),
+    BackgroundTransparency = 1, Text = "SPEED", TextColor3 = C(143, 145, 156),
+    Font = Enum.Font.GothamMedium, TextSize = 9, ZIndex = 2,
+}, speedRow)
+local function applySpeed(value)
+    if not alive or closing then return false end
+    -- No gameplay cap. Reject invalid/infinite values and values that overflow
+    -- Roblox's Vector3 storage instead of sending NaN/Inf into the physics solver.
+    local valid = type(value) == "number" and value == value and value >= 0 and value < math.huge
+    if valid then valid = Vector3.new(value, 0, 0).X < math.huge end
+    if valid then
+        flightSpeed = value
+        gui:SetAttribute("FlightSpeed", value)
+    end
+    speedBox.Text = tostring(flightSpeed)
+    cancelTween(speedStroke)
+    speedStroke.Color = valid and C(255, 221, 137) or C(218, 131, 128)
+    speedStroke.Transparency = 0.2
+    tween(speedStroke, 0.4, {Color = C(77, 80, 91), Transparency = 0.6})
+    return valid
+end
+connect(connections, speedBox.FocusLost, function()
+    applySpeed(tonumber((speedBox.Text:gsub(",", "."))))
+end)
+local function stepSpeed(direction, button)
+    if not alive or closing then return end
+    -- Commit an in-progress entry before applying a step, independently of
+    -- whether mobile FocusLost arrives before or after Activated.
+    if speedBox:IsFocused() then
+        applySpeed(tonumber((speedBox.Text:gsub(",", "."))))
+        speedBox:ReleaseFocus()
+    end
+    applySpeed(math.max(0, flightSpeed + direction * 2))
+    if button then
+        cancelTween(button)
+        button.BackgroundTransparency = 0.83
+        tween(button, 0.3, {BackgroundTransparency = 1})
+    end
+end
+connect(connections, speedDown.Activated, function() stepSpeed(-1, speedDown) end)
+connect(connections, speedUp.Activated, function() stepSpeed(1, speedUp) end)
+local overSpeed = false
+connect(connections, speedRow.MouseEnter, function() overSpeed = true end)
+connect(connections, speedRow.MouseLeave, function() overSpeed = false end)
+-- One input listener avoids duplicate steps when the pointer is over a child
+-- control rather than the row background.
+connect(connections, Input.InputChanged, function(input)
+    if focused and overSpeed and input.UserInputType == Enum.UserInputType.MouseWheel and input.Position.Z ~= 0 then
+        stepSpeed(input.Position.Z > 0 and 1 or -1)
+    end
+end)
+
+-- A fixed pool of layered energy ribbons and particles. Beams give the aura a
+-- readable silhouette in daylight; flame textures and tapered cores flow upward.
+-- All attachments stay on this character. No global lighting, sound or new
+-- instances/NumberSequences per animation frame.
 local Aura = {}
 Aura.__index = Aura
 function Aura.new(root, humanoid)
-    local self = setmetatable({objects = {}, emitters = {}, clock = 0, running = false}, Aura)
+    local self = setmetatable({objects = {}, emitters = {}, ribbons = {}, clock = 0,
+        running = false, reveal = 0, targetOn = false}, Aura)
     self.level = make("NumberValue", {Name = "FlyDBZAuraLevel", Value = 0})
     self.objects[#self.objects + 1] = self.level
     local bottom = -math.max(2.7, humanoid.HipHeight + root.Size.Y * 0.5)
+    local height = math.max(6.4, humanoid.HipHeight + root.Size.Y + 4.2)
+    local radiusX = math.max(1.3, root.Size.X * 0.65)
+    local radiusZ = math.max(0.95, root.Size.Z * 0.7)
     local gold = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, C(255, 252, 184)),
-        ColorSequenceKeypoint.new(0.27, C(255, 239, 85)),
-        ColorSequenceKeypoint.new(0.72, C(255, 193, 35)),
-        ColorSequenceKeypoint.new(1, C(236, 139, 21)),
+        ColorSequenceKeypoint.new(0, C(255, 246, 143)),
+        ColorSequenceKeypoint.new(0.3, C(255, 224, 31)),
+        ColorSequenceKeypoint.new(0.72, C(255, 190, 12)),
+        ColorSequenceKeypoint.new(1, C(242, 159, 24)),
     })
     local alpha = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1, 0.18),
-        NumberSequenceKeypoint.new(0.46, 0.28), NumberSequenceKeypoint.new(0.82, 0.65),
+        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.065, 0.06),
+        NumberSequenceKeypoint.new(0.4, 0.12), NumberSequenceKeypoint.new(0.78, 0.44),
         NumberSequenceKeypoint.new(1, 1),
     })
     local function emitterAt(position, gate, size, rate, index, spark)
@@ -184,19 +272,19 @@ function Aura.new(root, humanoid)
         local particle = make("ParticleEmitter", {
             Name = spark and "FlyDBZEmbers" or "FlyDBZFlame", Enabled = false, Rate = 0,
             Texture = spark and "rbxasset://textures/particles/sparkles_main.dds" or "rbxasset://textures/particles/fire_main.dds",
-            Color = gold, LightEmission = 1, LightInfluence = 0, Brightness = spark and 3 or 2.4,
+            Color = gold, LightEmission = spark and 1 or 0.58, LightInfluence = 0, Brightness = spark and 4 or 3,
             Transparency = alpha, LocalTransparencyModifier = 1,
-            Lifetime = spark and NumberRange.new(0.55, 0.9) or NumberRange.new(0.65, 0.95),
-            Speed = spark and NumberRange.new(7, 11) or NumberRange.new(6.5, 9),
-            Acceleration = Vector3.new(0, 4.5, 0), Drag = 0.6,
-            EmissionDirection = Enum.NormalId.Top, SpreadAngle = Vector2.new(8, 8),
+            Lifetime = spark and NumberRange.new(0.45, 0.75) or NumberRange.new(0.55, 0.8),
+            Speed = spark and NumberRange.new(9, 14) or NumberRange.new(8, 11.5),
+            Acceleration = Vector3.new(0, 6.5, 0), Drag = 0.3,
+            EmissionDirection = Enum.NormalId.Top, SpreadAngle = Vector2.new(5, 5),
             Orientation = Enum.ParticleOrientation.FacingCameraWorldUp,
-            Rotation = NumberRange.new(-14, 14), RotSpeed = NumberRange.new(-20, 20),
+            Rotation = NumberRange.new(-12, 12), RotSpeed = NumberRange.new(-16, 16),
             LockedToPart = true, VelocityInheritance = 0, ZOffset = 0,
             Size = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, size * 0.35),
-                NumberSequenceKeypoint.new(0.18, size, size * 0.12),
-                NumberSequenceKeypoint.new(0.6, size * 0.72),
+                NumberSequenceKeypoint.new(0, size * 0.45),
+                NumberSequenceKeypoint.new(0.16, size, size * 0.12),
+                NumberSequenceKeypoint.new(0.6, size * 0.6),
                 NumberSequenceKeypoint.new(1, 0),
             }),
         }, attachment)
@@ -204,24 +292,74 @@ function Aura.new(root, humanoid)
     end
     for i = 1, 8 do
         local angle = i * math.pi / 4
-        emitterAt(Vector3.new(math.cos(angle) * 1.35, bottom, math.sin(angle) * 1.05), 0, 1.6, 14, i, false)
+        emitterAt(Vector3.new(math.cos(angle) * radiusX, bottom, math.sin(angle) * radiusZ), 0, 2.25, 20, i, false)
+    end
+    for i = 1, 6 do
+        local angle = i * math.pi / 3 + 0.3
+        emitterAt(Vector3.new(math.cos(angle) * (radiusX + 0.5), bottom * 0.3, math.sin(angle) * (radiusZ + 0.35)),
+            0.28, 1.9, 13, i + 8, false)
     end
     for i = 1, 4 do
-        local angle = i * math.pi / 2 + 0.4
-        emitterAt(Vector3.new(math.cos(angle) * 1.55, bottom * 0.38, math.sin(angle) * 1.2), 0.28, 1.5, 10, i + 8, false)
+        local angle = i * math.pi / 2 + 0.15
+        emitterAt(Vector3.new(math.cos(angle) * radiusX, 1.2, math.sin(angle) * radiusZ), 0.6, 1.65, 9, i + 14, false)
+        emitterAt(Vector3.new(math.cos(angle) * radiusX, bottom, math.sin(angle) * radiusZ), 0.1, 0.12, 6, i + 18, true)
     end
-    for i = 1, 2 do
-        emitterAt(Vector3.new(i == 1 and -1.05 or 1.05, 1.1, 0.25), 0.6, 1.2, 8, i + 12, false)
-        emitterAt(Vector3.new(i == 1 and -0.9 or 0.9, bottom, 0), 0.1, 0.13, 6, i + 14, true)
+    local rimAlpha = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.08, 0.2),
+        NumberSequenceKeypoint.new(0.45, 0.23), NumberSequenceKeypoint.new(0.82, 0.36),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+    local coreAlpha = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.14, 0.55),
+        NumberSequenceKeypoint.new(0.55, 0.46), NumberSequenceKeypoint.new(0.9, 0.6),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+    local coreColor = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, C(255, 202, 30)),
+        ColorSequenceKeypoint.new(0.55, C(255, 244, 143)),
+        ColorSequenceKeypoint.new(1, C(255, 225, 60)),
+    })
+    for i = 1, 8 do
+        local angle = i * math.pi / 4 + 0.09 * math.sin(i * 2.3)
+        local radial = Vector3.new(math.cos(angle), 0, math.sin(angle))
+        local tangent = Vector3.new(-radial.Z, 0, radial.X)
+        local origin = Vector3.new(radial.X * radiusX, bottom, radial.Z * radiusZ)
+        local start = make("Attachment", {Name = "FlyDBZRibbonBase", Position = origin,
+            Axis = (radial * 0.58 + Vector3.yAxis * 0.82).Unit}, root)
+        local tip = make("Attachment", {Name = "FlyDBZRibbonTip", Position = origin,
+            Axis = (-radial * 0.22 + Vector3.yAxis).Unit}, root)
+        self.objects[#self.objects + 1] = start
+        self.objects[#self.objects + 1] = tip
+        local layers = {}
+        for layer = 1, 2 do
+            local core = layer == 2
+            local ribbon = make("Beam", {
+                Name = core and "FlyDBZEnergyCore" or "FlyDBZFlameRibbon",
+                Attachment0 = start, Attachment1 = tip, Enabled = false, FaceCamera = true,
+                Segments = 16, Width0 = 0, Width1 = 0, CurveSize0 = 0, CurveSize1 = 0,
+                Texture = core and "" or "rbxasset://textures/particles/fire_main.dds",
+                TextureMode = Enum.TextureMode.Wrap, TextureLength = 2.4 + i * 0.09,
+                TextureSpeed = 1.8 + i * 0.075, LightEmission = core and 0.7 or 0.55,
+                Brightness = core and 2.8 or 2.4, LightInfluence = 0,
+                Color = core and coreColor or gold, Transparency = core and coreAlpha or rimAlpha,
+                LocalTransparencyModifier = 1, ZOffset = 0,
+            }, start)
+            layers[#layers + 1] = {object = ribbon, width = core and 0.2 or 1.75}
+        end
+        self.ribbons[#self.ribbons + 1] = {start = start, tip = tip, origin = origin,
+            radial = radial, tangent = tangent, phase = i * 1.73, gate = (i % 3) * 0.035,
+            height = height * (0.84 + 0.16 * (0.5 + 0.5 * math.sin(i * 2.4))), layers = layers}
     end
     local lampAnchor = make("Attachment", {Name = "FlyDBZLightAnchor"}, root)
     self.objects[#self.objects + 1] = lampAnchor
     self.lamp = make("PointLight", {Name = "FlyDBZLight", Color = C(255, 211, 85),
-        Brightness = 0, Range = 9, Shadows = false, Enabled = false}, lampAnchor)
+        Brightness = 0, Range = 11, Shadows = false, Enabled = false}, lampAnchor)
     return self
 end
 function Aura:Set(enabled)
+    if enabled and not self.running then self.reveal = 0 end
     self.running = true
+    self.targetOn = enabled
     self.burst = enabled
     tween(self.level, enabled and 0.9 or 0.6, {Value = enabled and 1 or 0}, Enum.EasingStyle.Sine)
 end
@@ -229,19 +367,41 @@ function Aura:Update(dt)
     if not self.running then return end
     self.clock += dt
     local level = self.level.Value
+    if self.targetOn then self.reveal = math.max(self.reveal, level) end
+    for _, ribbon in ipairs(self.ribbons) do
+        local amount = math.clamp((level - ribbon.gate) / (1 - ribbon.gate), 0, 1)
+        local growth = math.clamp((self.reveal - ribbon.gate) / (1 - ribbon.gate), 0, 1)
+        local wave = math.sin(self.clock * 2.8 + ribbon.phase)
+        local drift = math.sin(self.clock * 4.1 + ribbon.phase * 0.7) * 0.19
+        local rise = math.max(0.03, ribbon.height * growth * (1 + 0.045 * wave))
+        -- Tips reach above the head, while the two control tangents bow the fire
+        -- around the shoulders. Each ribbon moves with a different phase.
+        ribbon.tip.Position = ribbon.origin:Lerp(ribbon.radial * 0.42 + Vector3.new(0, ribbon.origin.Y, 0), growth)
+            + Vector3.new(0, rise, 0) + ribbon.tangent * (drift * growth)
+        for _, layer in ipairs(ribbon.layers) do
+            local beam = layer.object
+            beam.Enabled = amount > 0.005
+            beam.LocalTransparencyModifier = 1 - amount
+            beam.Width0 = layer.width * amount * (0.92 + 0.08 * wave)
+            beam.Width1 = layer.width * 0.025 * amount
+            beam.CurveSize0 = rise * (0.52 + 0.035 * wave)
+            beam.CurveSize1 = rise * (0.27 + 0.035 * math.sin(self.clock * 2.1 + ribbon.phase))
+        end
+    end
     for _, item in ipairs(self.emitters) do
         local amount = math.clamp((level - item.gate) / (1 - item.gate), 0, 1)
-        local pulse = 0.92 + 0.08 * math.sin(self.clock * 3.1 + item.phase)
+        local pulse = 0.9 + 0.1 * math.sin(self.clock * 3.1 + item.phase)
         item.object.LocalTransparencyModifier = 1 - amount
         item.object.Rate = item.rate * amount * pulse
         item.object.Enabled = amount > 0.005
-        if self.burst and level > 0.14 and item.gate == 0 then item.object:Emit(2) end
+        if self.burst and level > 0.14 and item.gate == 0 then item.object:Emit(4) end
     end
     if level > 0.14 then self.burst = false end
     self.lamp.Enabled = level > 0.005
-    self.lamp.Brightness = level * (1.05 + 0.13 * math.sin(self.clock * 3.5))
+    self.lamp.Brightness = level * (1.7 + 0.16 * math.sin(self.clock * 3.5))
     if level <= 0 and not self.burst then
         self.running = false
+        self.reveal = 0
         for _, item in ipairs(self.emitters) do item.object:Clear() end
     end
 end
@@ -249,6 +409,7 @@ function Aura:Destroy()
     cancelTween(self.level)
     for _, object in ipairs(self.objects) do object:Destroy() end
     table.clear(self.emitters)
+    table.clear(self.ribbons)
     table.clear(self.objects)
 end
 
@@ -532,8 +693,13 @@ connect(connections, RunService.PreSimulation, function(dt)
     if not b.flying then return end
     local camera = workspace.CurrentCamera
     local direction = camera and moveDirection(b, camera) or ZERO
-    b.smoothed = b.smoothed:Lerp(direction * CONFIG.Speed, 1 - math.exp(-CONFIG.Acceleration * math.min(dt, 0.1)))
-    if b.smoothed.Magnitude < 0.015 then b.smoothed = ZERO end
+    local target = direction * flightSpeed
+    local blend = 1 - math.exp(-CONFIG.Acceleration * math.min(dt, 0.1))
+    -- Interpolate components as numbers; large opposite velocities can overflow
+    -- a Vector3 subtraction even when each requested value is finite.
+    b.smoothed = Vector3.new(b.smoothed.X * (1 - blend) + target.X * blend,
+        b.smoothed.Y * (1 - blend) + target.Y * blend, b.smoothed.Z * (1 - blend) + target.Z * blend)
+    if math.max(math.abs(b.smoothed.X), math.abs(b.smoothed.Y), math.abs(b.smoothed.Z)) < 0.015 then b.smoothed = ZERO end
     b.velocity.VectorVelocity = b.smoothed
     if camera then
         local forward = Vector3.new(camera.CFrame.LookVector.X, 0, camera.CFrame.LookVector.Z)
