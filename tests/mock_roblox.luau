@@ -53,6 +53,7 @@ local function newWorld()
     function vec.__unm(a)return a*-1 end
     function vec.__eq(a,b)return a.X==b.X and a.Y==b.Y and a.Z==b.Z end
     function vec:Dot(b)return self.X*b.X+self.Y*b.Y+self.Z*b.Z end
+    function vec:Cross(b)return vec.new(self.Y*b.Z-self.Z*b.Y,self.Z*b.X-self.X*b.Z,self.X*b.Y-self.Y*b.X)end
     function vec:Lerp(b,t)return self+(b-self)*t end
     vec.__index=function(t,k)
         if k=="Magnitude" then return math.sqrt(t:Dot(t)) end
@@ -66,13 +67,20 @@ local function newWorld()
         local pos=type(x)=="table" and x or vec.new(x,y,z)
         return setmetatable({Position=pos,X=pos.X,Y=pos.Y,Z=pos.Z,RightVector=vec.new(1,0,0),UpVector=vec.new(0,1,0),LookVector=vec.new(0,0,-1)},cf)
     end
-    cf.__index=function(t,k)if k=="Rotation" then return cf.new() end;return cf[k]end
-    function cf.__mul(a,b)return cf.new(a.Position+b.Position)end
-    function cf.__add(a,b)return cf.new(a.Position+b)end
-    function cf:PointToObjectSpace(v)return v-self.Position end
-    function cf:PointToWorldSpace(v)return v+self.Position end
-    function cf:VectorToObjectSpace(v)return v end
-    env.CFrame={new=cf.new,Angles=function()return cf.new()end,lookAt=function(p)return cf.new(p)end}
+    function cf.fromMatrix(pos,right,up,back)
+        local value=cf.new(pos);value.RightVector=right;value.UpVector=up;value.LookVector=-(back or right:Cross(up));return value
+    end
+    cf.__index=function(t,k)if k=="Rotation" then return cf.fromMatrix(vec.new(),t.RightVector,t.UpVector,-t.LookVector) end;return cf[k]end
+    function cf.__mul(a,b)return cf.fromMatrix(a:PointToWorldSpace(b.Position),a:VectorToWorldSpace(b.RightVector),a:VectorToWorldSpace(b.UpVector),a:VectorToWorldSpace(-b.LookVector))end
+    function cf.__add(a,b)return cf.fromMatrix(a.Position+b,a.RightVector,a.UpVector,-a.LookVector)end
+    function cf:PointToObjectSpace(v)return self:VectorToObjectSpace(v-self.Position)end
+    function cf:PointToWorldSpace(v)return self.Position+self:VectorToWorldSpace(v)end
+    function cf:VectorToObjectSpace(v)return vec.new(v:Dot(self.RightVector),v:Dot(self.UpVector),-v:Dot(self.LookVector))end
+    function cf:VectorToWorldSpace(v)return self.RightVector*v.X+self.UpVector*v.Y-self.LookVector*v.Z end
+    env.CFrame={new=cf.new,fromMatrix=cf.fromMatrix,Angles=function()return cf.new()end,lookAt=function(p,target)
+        local back=(p-target).Unit;local right=vec.new(0,1,0):Cross(back).Unit
+        return cf.fromMatrix(p,right,back:Cross(right),back)
+    end}
     local color={};color.__index=color
     function color.new(r,g,b)return setmetatable({R=r,G=g,B=b},color)end
     function color:Lerp(b,t)return color.new(self.R+(b.R-self.R)*t,self.G+(b.G-self.G)*t,self.B+(b.B-self.B)*t)end
@@ -134,6 +142,9 @@ local function newWorld()
             if old then old.ChildRemoved:Fire(t)end
             if v then v.ChildAdded:Fire(t)end
         else t._props[k]=v end
+        if k=='CFrame' and t.ClassName=='Attachment' then
+            t._props.Position=v.Position;t._props.Axis=v.RightVector;t._props.SecondaryAxis=v.UpVector
+        end
         if old~=v then
             if t._signals[k] then t._signals[k]:Fire(v)end
             if t._signals.Changed then t._signals.Changed:Fire(v)end

@@ -72,6 +72,8 @@ local function gradient(parent, colors, rotation)
 end
 local C = Color3.fromRGB
 local ZERO = Vector3.zero
+local FIRE_TEXTURE = "rbxasset://textures/particles/fire_main.dds"
+local SMOKE_TEXTURE = "rbxasset://textures/particles/smoke_main.dds"
 
 -- Compact touch-friendly surface: heading, flight switch and editable speed.
 local gui = make("ScreenGui", {
@@ -85,33 +87,48 @@ gui:SetAttribute("AnimationStatus", "Idle")
 gui:SetAttribute("FlightSpeed", flightSpeed)
 local window = make("CanvasGroup", {
     Name = "Window", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -22, 0, 80),
-    Size = UDim2.fromOffset(228, 146), BackgroundColor3 = C(19, 20, 24),
+    Size = UDim2.fromOffset(228, 146), BackgroundColor3 = C(28, 28, 32), ZIndex = 3,
     BackgroundTransparency = 0.03, GroupTransparency = 1, BorderSizePixel = 0,
 }, gui)
 round(window, 15)
 local frameStroke = make("UIStroke", {Color = C(112, 115, 126), Transparency = 0.48, Thickness = 1}, window)
 gradient(window, {
-    ColorSequenceKeypoint.new(0, C(245, 245, 250)),
-    ColorSequenceKeypoint.new(0.5, C(190, 191, 203)),
-    ColorSequenceKeypoint.new(1, C(233, 231, 228)),
-}, 35)
+    ColorSequenceKeypoint.new(0, C(248, 241, 224)),
+    ColorSequenceKeypoint.new(0.42, C(198, 196, 202)),
+    ColorSequenceKeypoint.new(1, C(139, 138, 147)),
+}, 65)
+local frameSheen = gradient(frameStroke, {
+    ColorSequenceKeypoint.new(0, C(150, 139, 116)),
+    ColorSequenceKeypoint.new(0.46, C(255, 244, 200)),
+    ColorSequenceKeypoint.new(0.62, C(198, 173, 114)),
+    ColorSequenceKeypoint.new(1, C(127, 129, 140)),
+}, 25)
 local windowScale = make("UIScale", {Scale = 0.96}, window)
 local header = make("TextLabel", {
     Name = "DragHandle", BackgroundTransparency = 1, Active = true,
     Position = UDim2.fromOffset(15, 0), Size = UDim2.new(1, -59, 0, 40),
-    Text = "FLY DBZ", TextColor3 = C(239, 239, 242), TextSize = 15,
+    Text = "FLY DBZ", TextColor3 = C(249, 246, 235), TextSize = 16,
     Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Left,
 }, window)
 local close = make("TextButton", {
-    Name = "Close", BackgroundTransparency = 1, Position = UDim2.new(1, -42, 0, 0),
+    Name = "Close", BackgroundTransparency = 1, BackgroundColor3 = C(255, 224, 139), Position = UDim2.new(1, -42, 0, 0),
     Size = UDim2.fromOffset(42, 40), Text = "×", TextSize = 23,
     Font = Enum.Font.Gotham, TextColor3 = C(150, 151, 162), AutoButtonColor = false,
 }, window)
+round(close, 12)
+connect(connections, close.MouseEnter, function() if not closing then tween(close, 0.18, {BackgroundTransparency = 0.9, TextColor3 = C(255, 237, 185)}) end end)
+connect(connections, close.MouseLeave, function() if not closing then tween(close, 0.2, {BackgroundTransparency = 1, TextColor3 = C(150, 151, 162)}) end end)
+local divider = make("Frame", {Name = "HeaderAccent", Position = UDim2.fromOffset(15, 35),
+    Size = UDim2.new(1, -30, 0, 1), BorderSizePixel = 0, BackgroundColor3 = C(246, 206, 111)}, window)
+local dividerGradient = gradient(divider, {ColorSequenceKeypoint.new(0, C(255, 240, 186)), ColorSequenceKeypoint.new(1, C(71, 69, 71))})
+dividerGradient.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(0.25, 0.75), NumberSequenceKeypoint.new(1, 1)})
 local toggle = make("TextButton", {
     Name = "FlightToggle", Position = UDim2.fromOffset(12, 43), Size = UDim2.new(1, -24, 0, 42),
     BackgroundColor3 = C(31, 32, 38), Text = "", AutoButtonColor = false, BorderSizePixel = 0,
 }, window)
 round(toggle, 11)
+gradient(toggle, {ColorSequenceKeypoint.new(0, C(225, 222, 212)),
+    ColorSequenceKeypoint.new(0.45, C(165, 166, 181)), ColorSequenceKeypoint.new(1, C(216, 207, 187))}, 30)
 local toggleScale = make("UIScale", {Scale = 1}, toggle)
 local toggleStroke = make("UIStroke", {Thickness = 1, Color = C(80, 82, 96), Transparency = 0.45}, toggle)
 local light = make("Frame", {
@@ -119,7 +136,7 @@ local light = make("Frame", {
     BorderSizePixel = 0, Size = UDim2.fromScale(1, 1), ZIndex = 2,
 }, toggle)
 round(light, 11)
-gradient(light, {
+local toggleSheen = gradient(light, {
     ColorSequenceKeypoint.new(0, C(255, 250, 168)),
     ColorSequenceKeypoint.new(0.45, C(248, 183, 53)),
     ColorSequenceKeypoint.new(1, C(255, 230, 111)),
@@ -165,6 +182,8 @@ local speedRow = make("Frame", {
     BackgroundColor3 = C(26, 27, 33), BorderSizePixel = 0, Active = true,
 }, window)
 round(speedRow, 10)
+gradient(speedRow, {ColorSequenceKeypoint.new(0, C(218, 216, 211)),
+    ColorSequenceKeypoint.new(0.5, C(179, 179, 191)), ColorSequenceKeypoint.new(1, C(220, 218, 211))}, 90)
 local speedStroke = make("UIStroke", {Color = C(77, 80, 91), Transparency = 0.6, Thickness = 1}, speedRow)
 local function speedButton(name, text, position)
     local button = make("TextButton", {
@@ -240,15 +259,123 @@ connect(connections, Input.InputChanged, function(input)
     end
 end)
 
--- A fixed pool of layered energy ribbons and particles. Beams give the aura a
--- readable silhouette in daylight; flame textures and tapered cores flow upward.
+-- A small pooled 2D fire rim lives outside the CanvasGroup so its flames are
+-- not clipped. The opaque card covers the inward half, keeping controls clear.
+local uiFireLayer = make("Frame", {Name = "WindowFireLayer", BackgroundTransparency = 1,
+    AnchorPoint = window.AnchorPoint, Position = window.Position, Size = window.Size,
+    ClipsDescendants = false, Active = false, ZIndex = 1}, gui)
+local uiFireScale = make("UIScale", {Scale = windowScale.Scale}, uiFireLayer)
+connect(connections, window:GetPropertyChangedSignal("Position"), function() uiFireLayer.Position = window.Position end)
+local uiFire = {clock = 0, strength = 0, particles = {}}
+for i = 1, 18 do
+    local edge = i <= 8 and "top" or (i <= 12 and "left" or (i <= 16 and "right" or "bottom"))
+    local along = edge == "top" and ((i - 0.5) / 8)
+        or (edge == "left" and ((i - 8.5) / 4) or (edge == "right" and ((i - 12.5) / 4) or ((i - 16.5) / 2)))
+    local sprite = make("ImageLabel", {Name = "GuiFlame", BackgroundTransparency = 1,
+        Image = FIRE_TEXTURE, ImageColor3 = C(255, 208, 70), ImageTransparency = 1,
+        AnchorPoint = Vector2.new(0.5, 0.8), Size = UDim2.fromOffset(16, 24),
+        ZIndex = 1, Active = false}, uiFireLayer)
+    uiFire.particles[#uiFire.particles + 1] = {object = sprite, edge = edge, along = along,
+        phase = (i * 0.61803398875) % 1, life = 0.8 + (i % 5) * 0.11}
+end
+function uiFire:Update(dt)
+    self.clock += dt
+    local strengthTarget = closing and 0 or (wantedFlight and 0.74 or 0.29)
+    self.strength += (strengthTarget - self.strength) * (1 - math.exp(-7 * dt))
+    local visibility = self.strength * (1 - window.GroupTransparency)
+    uiFireScale.Scale = windowScale.Scale
+    local width, height = window.Size.X.Offset, window.Size.Y.Offset
+    for _, particle in ipairs(self.particles) do
+        local age = (self.clock / particle.life + particle.phase) % 1
+        local envelope = math.sin(age * math.pi)
+        local drift = math.sin(age * 5 + particle.phase * 11) * 3
+        local x, y
+        if particle.edge == "top" then x, y = width * particle.along + drift, 5 - age * 21
+        elseif particle.edge == "bottom" then x, y = width * particle.along + drift, height + 10 - age * 17
+        else x, y = particle.edge == "left" and -3 - envelope * 5 or width + 3 + envelope * 5,
+            height * particle.along - age * 18 end
+        particle.object.Position = UDim2.fromOffset(x, y)
+        particle.object.Size = UDim2.fromOffset(12 + envelope * 10, 18 + envelope * 17)
+        particle.object.Rotation = drift * 2
+        particle.object.ImageTransparency = 1 - visibility * envelope * 0.82
+    end
+    frameSheen.Offset = Vector2.new(math.sin(self.clock * 0.48) * 0.45, 0)
+    toggleSheen.Offset = Vector2.new(math.sin(self.clock * 0.7) * 0.22, 0)
+end
+
+-- This notice has no timeout and does not block the joystick outside its card.
+-- Flight toggles and respawns never dismiss it; only its explicit button does.
+gui:SetAttribute("QualityNoticeDismissed", false)
+local notice = make("CanvasGroup", {Name = "QualityNotice", AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(0.86, 0, 0, 132),
+    BackgroundColor3 = C(23, 24, 29), BackgroundTransparency = 0.03, BorderSizePixel = 0,
+    GroupTransparency = 1, ZIndex = 20, Active = true}, gui)
+make("UISizeConstraint", {MinSize = Vector2.new(0, 132), MaxSize = Vector2.new(360, 132)}, notice)
+round(notice, 16)
+make("UIStroke", {Color = C(220, 190, 115), Transparency = 0.32, Thickness = 1}, notice)
+gradient(notice, {ColorSequenceKeypoint.new(0, C(245, 237, 214)), ColorSequenceKeypoint.new(1, C(180, 181, 197))}, 60)
+local noticeScale = make("UIScale", {Scale = 0.96}, notice)
+make("TextLabel", {Name = "QualityMessage", Position = UDim2.fromOffset(20, 14), Size = UDim2.new(1, -40, 0, 58),
+    BackgroundTransparency = 1, Text = "For better quality, use Roblox's high graphics settings.",
+    TextColor3 = C(243, 240, 229), Font = Enum.Font.GothamMedium, TextSize = 14,
+    TextWrapped = true, ZIndex = 21}, notice)
+local dismissNotice = make("TextButton", {Name = "DismissQualityNotice", AnchorPoint = Vector2.new(0.5, 0),
+    Position = UDim2.new(0.5, 0, 0, 79), Size = UDim2.new(1, -40, 0, 40), Text = "OK",
+    Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = C(255, 237, 182),
+    BackgroundColor3 = C(61, 51, 30), BorderSizePixel = 0, AutoButtonColor = false, ZIndex = 21}, notice)
+round(dismissNotice, 10)
+make("UIStroke", {Color = C(207, 175, 102), Transparency = 0.55}, dismissNotice)
+local noticeClosing = false
+connect(connections, dismissNotice.Activated, function()
+    if not alive or closing or noticeClosing then return end
+    noticeClosing = true
+    gui:SetAttribute("QualityNoticeDismissed", true)
+    dismissNotice.Active = false
+    tween(notice, 0.22, {GroupTransparency = 1})
+    tween(noticeScale, 0.22, {Scale = 0.97})
+    task.delay(0.24, function()
+        if not alive then return end
+        cancelTween(notice); cancelTween(noticeScale)
+        notice:Destroy()
+    end)
+end)
+tween(notice, 0.4, {GroupTransparency = 0})
+tween(noticeScale, 0.4, {Scale = 1})
+
+-- A fixed pool of textured fire sheets and particles, with a bounded native
+-- trail. There are no untextured core lines. Motion bends the whole envelope.
 -- All attachments stay on this character. No global lighting, sound or new
 -- instances/NumberSequences per animation frame.
 local Aura = {}
 Aura.__index = Aura
+local function unitAndSpeed(vector)
+    local largest = math.max(math.abs(vector.X), math.abs(vector.Y), math.abs(vector.Z))
+    if largest < 0.001 or largest ~= largest or largest == math.huge then return ZERO, 0 end
+    local scaled = Vector3.new(vector.X / largest, vector.Y / largest, vector.Z / largest)
+    return scaled.Unit, largest * scaled.Magnitude
+end
+local function turnAxis(from, to, alpha)
+    local dot = math.clamp(from:Dot(to), -1, 1)
+    if dot > 0.999 then return from:Lerp(to, alpha).Unit end
+    if dot < -0.999 then
+        -- A half-turn needs a stable perpendicular; linear interpolation would
+        -- cross zero and snap when reversing from ascent to descent.
+        local reference = math.abs(from.X) < 0.9 and Vector3.xAxis or Vector3.zAxis
+        local perpendicular = from:Cross(reference).Unit
+        return (from * math.cos(math.pi * alpha) + perpendicular * math.sin(math.pi * alpha)).Unit
+    end
+    local angle = math.acos(dot)
+    return (from * math.sin((1 - alpha) * angle) + to * math.sin(alpha * angle)).Unit
+end
+local function flowBasis(axis)
+    local reference = math.abs(axis.Y) < 0.92 and Vector3.yAxis or Vector3.zAxis
+    local across = axis:Cross(reference).Unit
+    return across, axis:Cross(across).Unit
+end
 function Aura.new(root, humanoid)
     local self = setmetatable({objects = {}, emitters = {}, ribbons = {}, clock = 0,
-        running = false, reveal = 0, targetOn = false}, Aura)
+        running = false, reveal = 0, targetOn = false, root = root,
+        axis = Vector3.yAxis, across = Vector3.xAxis, motion = 0}, Aura)
     self.level = make("NumberValue", {Name = "FlyDBZAuraLevel", Value = 0})
     self.objects[#self.objects + 1] = self.level
     local bottom = -math.max(2.7, humanoid.HipHeight + root.Size.Y * 0.5)
@@ -258,8 +385,8 @@ function Aura.new(root, humanoid)
     local gold = ColorSequence.new({
         ColorSequenceKeypoint.new(0, C(255, 246, 143)),
         ColorSequenceKeypoint.new(0.3, C(255, 224, 31)),
-        ColorSequenceKeypoint.new(0.72, C(255, 190, 12)),
-        ColorSequenceKeypoint.new(1, C(242, 159, 24)),
+        ColorSequenceKeypoint.new(0.72, C(255, 175, 12)),
+        ColorSequenceKeypoint.new(1, C(245, 133, 20)),
     })
     local alpha = NumberSequence.new({
         NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.065, 0.06),
@@ -271,15 +398,15 @@ function Aura.new(root, humanoid)
         self.objects[#self.objects + 1] = attachment
         local particle = make("ParticleEmitter", {
             Name = spark and "FlyDBZEmbers" or "FlyDBZFlame", Enabled = false, Rate = 0,
-            Texture = spark and "rbxasset://textures/particles/sparkles_main.dds" or "rbxasset://textures/particles/fire_main.dds",
+            Texture = spark and "rbxasset://textures/particles/sparkles_main.dds" or FIRE_TEXTURE,
             Color = gold, LightEmission = spark and 1 or 0.58, LightInfluence = 0, Brightness = spark and 4 or 3,
             Transparency = alpha, LocalTransparencyModifier = 1,
             Lifetime = spark and NumberRange.new(0.45, 0.75) or NumberRange.new(0.55, 0.8),
             Speed = spark and NumberRange.new(9, 14) or NumberRange.new(8, 11.5),
             Acceleration = Vector3.new(0, 6.5, 0), Drag = 0.3,
             EmissionDirection = Enum.NormalId.Top, SpreadAngle = Vector2.new(5, 5),
-            Orientation = Enum.ParticleOrientation.FacingCameraWorldUp,
-            Rotation = NumberRange.new(-12, 12), RotSpeed = NumberRange.new(-16, 16),
+            Orientation = spark and Enum.ParticleOrientation.FacingCamera or Enum.ParticleOrientation.VelocityParallel,
+            Rotation = NumberRange.new(-8, 8), RotSpeed = NumberRange.new(-8, 8),
             LockedToPart = true, VelocityInheritance = 0, ZOffset = 0,
             Size = NumberSequence.new({
                 NumberSequenceKeypoint.new(0, size * 0.45),
@@ -288,7 +415,8 @@ function Aura.new(root, humanoid)
                 NumberSequenceKeypoint.new(1, 0),
             }),
         }, attachment)
-        self.emitters[#self.emitters + 1] = {object = particle, gate = gate, rate = rate, phase = index * 1.79}
+        self.emitters[#self.emitters + 1] = {object = particle, anchor = attachment, origin = position,
+            gate = gate, rate = rate, phase = index * 1.79}
     end
     for i = 1, 8 do
         local angle = i * math.pi / 4
@@ -305,13 +433,13 @@ function Aura.new(root, humanoid)
         emitterAt(Vector3.new(math.cos(angle) * radiusX, bottom, math.sin(angle) * radiusZ), 0.1, 0.12, 6, i + 18, true)
     end
     local rimAlpha = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.08, 0.2),
-        NumberSequenceKeypoint.new(0.45, 0.23), NumberSequenceKeypoint.new(0.82, 0.36),
+        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.08, 0.5),
+        NumberSequenceKeypoint.new(0.45, 0.55), NumberSequenceKeypoint.new(0.82, 0.72),
         NumberSequenceKeypoint.new(1, 1),
     })
     local coreAlpha = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.14, 0.55),
-        NumberSequenceKeypoint.new(0.55, 0.46), NumberSequenceKeypoint.new(0.9, 0.6),
+        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1, 0.16),
+        NumberSequenceKeypoint.new(0.55, 0.2), NumberSequenceKeypoint.new(0.9, 0.55),
         NumberSequenceKeypoint.new(1, 1),
     })
     local coreColor = ColorSequence.new({
@@ -322,7 +450,6 @@ function Aura.new(root, humanoid)
     for i = 1, 8 do
         local angle = i * math.pi / 4 + 0.09 * math.sin(i * 2.3)
         local radial = Vector3.new(math.cos(angle), 0, math.sin(angle))
-        local tangent = Vector3.new(-radial.Z, 0, radial.X)
         local origin = Vector3.new(radial.X * radiusX, bottom, radial.Z * radiusZ)
         local start = make("Attachment", {Name = "FlyDBZRibbonBase", Position = origin,
             Axis = (radial * 0.58 + Vector3.yAxis * 0.82).Unit}, root)
@@ -334,22 +461,37 @@ function Aura.new(root, humanoid)
         for layer = 1, 2 do
             local core = layer == 2
             local ribbon = make("Beam", {
-                Name = core and "FlyDBZEnergyCore" or "FlyDBZFlameRibbon",
+                Name = core and "FlyDBZHotFlame" or "FlyDBZHeatEnvelope",
                 Attachment0 = start, Attachment1 = tip, Enabled = false, FaceCamera = true,
                 Segments = 16, Width0 = 0, Width1 = 0, CurveSize0 = 0, CurveSize1 = 0,
-                Texture = core and "" or "rbxasset://textures/particles/fire_main.dds",
-                TextureMode = Enum.TextureMode.Wrap, TextureLength = 2.4 + i * 0.09,
-                TextureSpeed = 1.8 + i * 0.075, LightEmission = core and 0.7 or 0.55,
+                Texture = core and FIRE_TEXTURE or SMOKE_TEXTURE,
+                TextureMode = Enum.TextureMode.Wrap, TextureLength = 3.4 + i * 0.1,
+                TextureSpeed = 2.4 + i * 0.075, LightEmission = core and 0.65 or 0.5,
                 Brightness = core and 2.8 or 2.4, LightInfluence = 0,
                 Color = core and coreColor or gold, Transparency = core and coreAlpha or rimAlpha,
                 LocalTransparencyModifier = 1, ZOffset = 0,
             }, start)
-            layers[#layers + 1] = {object = ribbon, width = core and 0.2 or 1.75}
+            layers[#layers + 1] = {object = ribbon, width = core and 2.3 or 3.8}
         end
         self.ribbons[#self.ribbons + 1] = {start = start, tip = tip, origin = origin,
-            radial = radial, tangent = tangent, phase = i * 1.73, gate = (i % 3) * 0.035,
+            angle = angle, radiusX = radiusX, radiusZ = radiusZ,
+            phase = i * 1.73, gate = (i % 3) * 0.035,
             height = height * (0.84 + 0.16 * (0.5 + 0.5 * math.sin(i * 2.4))), layers = layers}
     end
+    self.trailLeft = make("Attachment", {Name = "FlyDBZTrailLeft", Position = Vector3.new(-1.4, 0, 0)}, root)
+    self.trailRight = make("Attachment", {Name = "FlyDBZTrailRight", Position = Vector3.new(1.4, 0, 0)}, root)
+    self.objects[#self.objects + 1] = self.trailLeft
+    self.objects[#self.objects + 1] = self.trailRight
+    self.trail = make("Trail", {Name = "FlyDBZMeteorTrail", Attachment0 = self.trailLeft,
+        Attachment1 = self.trailRight, Enabled = false, FaceCamera = true,
+        Texture = FIRE_TEXTURE, TextureMode = Enum.TextureMode.Wrap, TextureLength = 2.7,
+        Lifetime = 0.28, MaxLength = 16, MinLength = 0.12, LightEmission = 0.65,
+        LightInfluence = 0, Brightness = 2.8, Color = gold, LocalTransparencyModifier = 1,
+        WidthScale = NumberSequence.new({NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(0.35, 0.8), NumberSequenceKeypoint.new(1, 0)}),
+        Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.2),
+            NumberSequenceKeypoint.new(0.3, 0.32), NumberSequenceKeypoint.new(1, 1)}),
+    }, self.trailLeft)
     local lampAnchor = make("Attachment", {Name = "FlyDBZLightAnchor"}, root)
     self.objects[#self.objects + 1] = lampAnchor
     self.lamp = make("PointLight", {Name = "FlyDBZLight", Color = C(255, 211, 85),
@@ -357,51 +499,91 @@ function Aura.new(root, humanoid)
     return self
 end
 function Aura:Set(enabled)
-    if enabled and not self.running then self.reveal = 0 end
+    if enabled and not self.running then
+        self.reveal, self.motion, self.axis, self.across = 0, 0, Vector3.yAxis, Vector3.xAxis
+        self.trail:Clear()
+    end
     self.running = true
     self.targetOn = enabled
     self.burst = enabled
+    if not enabled then self.trail.Enabled = false end
     tween(self.level, enabled and 0.9 or 0.6, {Value = enabled and 1 or 0}, Enum.EasingStyle.Sine)
 end
-function Aura:Update(dt)
+function Aura:Update(dt, velocity)
     if not self.running then return end
     self.clock += dt
     local level = self.level.Value
     if self.targetOn then self.reveal = math.max(self.reveal, level) end
+    if self.targetOn then
+        -- Use the flight controller's smoothed world velocity, before the
+        -- no-fall pulse. This prevents alternating zero-velocity VFX jitter.
+        local direction, speed = unitAndSpeed(velocity or ZERO)
+        local strength = math.clamp(speed / 35, 0, 1)
+        local target = strength > 0 and turnAxis(Vector3.yAxis, -direction, strength) or Vector3.yAxis
+        self.axis = turnAxis(self.axis, target, 1 - math.exp(-6.5 * math.min(dt, 0.1)))
+        self.motion += (strength - self.motion) * (1 - math.exp(-5 * math.min(dt, 0.1)))
+    end
+    -- Transport the previous perpendicular instead of changing reference axes
+    -- at a vertical threshold, which would visibly rotate the flame ring.
+    local projected = self.across - self.axis * self.across:Dot(self.axis)
+    if projected.Magnitude < 0.001 then self.across = flowBasis(self.axis)
+    else self.across = projected.Unit end
+    local axis = self.root.CFrame:VectorToObjectSpace(self.axis).Unit
+    local across = self.root.CFrame:VectorToObjectSpace(self.across).Unit
+    local around = axis:Cross(across).Unit
     for _, ribbon in ipairs(self.ribbons) do
         local amount = math.clamp((level - ribbon.gate) / (1 - ribbon.gate), 0, 1)
         local growth = math.clamp((self.reveal - ribbon.gate) / (1 - ribbon.gate), 0, 1)
         local wave = math.sin(self.clock * 2.8 + ribbon.phase)
         local drift = math.sin(self.clock * 4.1 + ribbon.phase * 0.7) * 0.19
-        local rise = math.max(0.03, ribbon.height * growth * (1 + 0.045 * wave))
-        -- Tips reach above the head, while the two control tangents bow the fire
-        -- around the shoulders. Each ribbon moves with a different phase.
-        ribbon.tip.Position = ribbon.origin:Lerp(ribbon.radial * 0.42 + Vector3.new(0, ribbon.origin.Y, 0), growth)
-            + Vector3.new(0, rise, 0) + ribbon.tangent * (drift * growth)
+        local rise = math.max(0.03, ribbon.height * growth * (1 + self.motion * 0.65) * (1 + 0.045 * wave))
+        local radial = across * math.cos(ribbon.angle) + around * math.sin(ribbon.angle)
+        local movingBase = -axis * 1.25 + across * (math.cos(ribbon.angle) * ribbon.radiusX)
+            + around * (math.sin(ribbon.angle) * math.max(ribbon.radiusZ, 1.35))
+        local origin = ribbon.origin:Lerp(movingBase, self.motion)
+        ribbon.start.Position = origin
+        ribbon.start.Axis = (axis * 0.88 + radial * 0.46).Unit
+        ribbon.tip.Position = origin + axis * rise - radial * (0.7 * growth)
+            + axis:Cross(radial) * (drift * growth)
+        ribbon.tip.Axis = (axis - radial * 0.18).Unit
         for _, layer in ipairs(ribbon.layers) do
             local beam = layer.object
             beam.Enabled = amount > 0.005
             beam.LocalTransparencyModifier = 1 - amount
-            beam.Width0 = layer.width * amount * (0.92 + 0.08 * wave)
-            beam.Width1 = layer.width * 0.025 * amount
-            beam.CurveSize0 = rise * (0.52 + 0.035 * wave)
-            beam.CurveSize1 = rise * (0.27 + 0.035 * math.sin(self.clock * 2.1 + ribbon.phase))
+            beam.Width0 = layer.width * amount * (0.92 + 0.08 * wave) * (1 + self.motion * 0.15)
+            beam.Width1 = layer.width * 0.06 * amount
+            beam.CurveSize0 = rise * (0.3 + 0.035 * wave)
+            beam.CurveSize1 = rise * (0.19 + 0.03 * math.sin(self.clock * 2.1 + ribbon.phase))
         end
     end
+    local acceleration = self.axis * (7 + self.motion * 15)
     for _, item in ipairs(self.emitters) do
         local amount = math.clamp((level - item.gate) / (1 - item.gate), 0, 1)
         local pulse = 0.9 + 0.1 * math.sin(self.clock * 3.1 + item.phase)
         item.object.LocalTransparencyModifier = 1 - amount
         item.object.Rate = item.rate * amount * pulse
         item.object.Enabled = amount > 0.005
+        local ring = across * (math.cos(item.phase) * 1.5) + around * (math.sin(item.phase) * 1.5)
+        local origin = item.origin:Lerp(-axis * 0.65 + ring, self.motion * 0.65)
+        item.anchor.CFrame = CFrame.fromMatrix(origin, across, axis)
+        item.object.Acceleration = acceleration
         if self.burst and level > 0.14 and item.gate == 0 then item.object:Emit(4) end
     end
     if level > 0.14 then self.burst = false end
+    self.trailLeft.Position = -across * 1.65
+    self.trailRight.Position = across * 1.65
+    local trailActive = self.targetOn and self.motion > 0.12 and level > 0.05
+    self.trail.Enabled = trailActive
+    self.trail.LocalTransparencyModifier = 1 - level * self.motion
+    if self.trailWasActive and not trailActive and self.motion < 0.04 then self.trail:Clear() end
+    self.trailWasActive = trailActive or (self.trailWasActive and self.motion >= 0.04)
     self.lamp.Enabled = level > 0.005
     self.lamp.Brightness = level * (1.7 + 0.16 * math.sin(self.clock * 3.5))
     if level <= 0 and not self.burst then
         self.running = false
         self.reveal = 0
+        self.trail:Clear()
+        self.trailWasActive = false
         for _, item in ipairs(self.emitters) do item.object:Clear() end
     end
 end
@@ -714,7 +896,11 @@ connect(connections, RunService.Heartbeat, function(dt)
     local b = body
     -- VFX bookkeeping runs at 30 Hz; Roblox simulates the particles independently.
     auraAccumulator += dt
-    if b and auraAccumulator >= 1 / 30 then b.aura:Update(auraAccumulator); auraAccumulator = 0 end
+    if auraAccumulator >= 1 / 30 then
+        if b then b.aura:Update(auraAccumulator, b.flying and b.smoothed or ZERO) end
+        uiFire:Update(auraAccumulator)
+        auraAccumulator = 0
+    end
     if game.PlaceId ~= CONFIG.NoFallPlaceId or not b or not validBody(b) or b.root.Anchored then return end
     restoreVelocity()
     pendingVelocity = {root = b.root, character = currentCharacter, velocity = b.root.AssemblyLinearVelocity}
@@ -743,6 +929,7 @@ connect(connections, close.Activated, function()
     paintToggle(false)
     tween(window, 0.3, {GroupTransparency = 1})
     tween(windowScale, 0.3, {Scale = 0.96})
+    if notice.Parent then tween(notice, 0.3, {GroupTransparency = 1}) end
     task.delay(0.65, function() if alive then gui:Destroy() end end)
 end)
 if player.Character then bindCharacter(player.Character) end

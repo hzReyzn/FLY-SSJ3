@@ -33,7 +33,7 @@ return function(source)
         assert(find(g,'Window').Size.X.Offset==228 and find(g,'Window').Size.Y.Offset==146)
         assert(find(g,'FlightToggle').Size.Y.Offset>=40)
         assert(not r:FindFirstChild('FlyDBZVelocity') and not h.PlatformStand)
-        for _,o in ipairs(g:GetDescendants()) do
+        for _,o in ipairs(find(g,'Window'):GetDescendants()) do
             if o.Text~='' then assert(o.Text=='FLY DBZ' or o.Text=='OFF' or o.Text=='×'
                 or o.Text=='SPEED' or o.Text=='58' or o.Text=='−' or o.Text=='+') end
         end
@@ -131,7 +131,7 @@ return function(source)
         local w,g,c=launch();click(g);w.step(60)
         for _,o in ipairs(w.objects) do
             assert(o.ClassName~='Sound' and o.ClassName~='BloomEffect' and o.ClassName~='ColorCorrectionEffect')
-            if o:IsA('ParticleEmitter') or o:IsA('PointLight') or o:IsA('Beam') then assert(o:IsDescendantOf(c)) end
+            if o:IsA('ParticleEmitter') or o:IsA('PointLight') or o:IsA('Beam') or o:IsA('Trail') then assert(o:IsDescendantOf(c)) end
         end
         g:Destroy()
     end)
@@ -288,13 +288,14 @@ return function(source)
         assert(g:GetAttribute('FlightSpeed')==142,'closed controller accepted input')
         w.step(60);noOwnedObjects(w)
     end)
-    test('layered ribbons grow from feet above head and move independently', function()
+    test('textured meteor envelope grows from feet with no rigid core lines', function()
         local w,g,_,_,r=launch();local ribbons={}
         for _,o in ipairs(r:GetDescendants()) do if o:IsA('Beam') then ribbons[#ribbons+1]=o end end
         assert(#ribbons==16)
         for _,o in ipairs(ribbons) do
             assert(not o.Enabled and o.LocalTransparencyModifier==1 and o.Width0==0)
             assert(o.FaceCamera and o.Segments>=12 and o.TextureSpeed>0)
+            assert(o.Texture~='' and o.Name~='FlyDBZEnergyCore','untextured line remains')
             assert(o.Attachment0.Position.Y==o.Attachment1.Position.Y)
         end
         click(g);w.step(7)
@@ -304,7 +305,7 @@ return function(source)
         w.step(60);local points={}
         for i,o in ipairs(ribbons) do
             assert(o.Enabled and o.LocalTransparencyModifier==0)
-            assert(o.Attachment1.Position.Y>2.4 and o.CurveSize0>1 and o.Width0>0)
+            assert(o.Attachment1.Position.Y>2.4 and o.CurveSize0>1 and o.Width0>1.9)
             points[i]=o.Attachment1.Position
         end
         w.step(15)
@@ -320,19 +321,121 @@ return function(source)
     test('aura stays bounded, warm and visible without increasing objects each frame', function()
         local w,g,_,_,r=launch();click(g);w.step(70)
         local countBefore=#w.objects;local particles=0
-        local yellowCore=false
+        local texturedCore=false
         for _,o in ipairs(r:GetDescendants()) do
             if o:IsA('ParticleEmitter') then
                 particles+=o.Rate*o.Lifetime[2]
                 if o.Name=='FlyDBZFlame' then assert(o.LightEmission<1 and o.Brightness>=3) end
             end
-            if o.Name=='FlyDBZEnergyCore' then yellowCore=o.Texture=='' end
+            if o.Name=='FlyDBZHotFlame' then texturedCore=o.Texture~='' end
         end
-        assert(yellowCore and particles<260,'unbounded particle load')
+        assert(texturedCore and particles<260,'unbounded particle load')
         w.step(180);assert(#w.objects==countBefore,'VFX allocated instances every frame')
         click(g);w.step(45);local lamp=find(r,'FlyDBZLight')
         assert(not lamp.Enabled and lamp.Brightness==0)
         g:Destroy();noOwnedObjects(w)
+    end)
+    test('meteor fire trails movement in all six directions and rises while hovering', function()
+        local w,g,_,_,r=launch({playerModule=true});local V=w.env.Vector3
+        click(g);w.step(120)
+        local flame=find(r,'FlyDBZFlame')
+        local function flow() return r.CFrame:VectorToWorldSpace(flame.Parent.CFrame.UpVector) end
+        assert(flow():Dot(V.yAxis)>.99)
+        local cases={
+            {move=V.new(0,0,-1),look=V.new(0,0,-1),tail=V.zAxis},
+            {move=V.new(0,0,1),look=V.new(0,0,-1),tail=-V.zAxis},
+            {move=V.new(-1,0,0),look=V.new(0,0,-1),tail=V.xAxis},
+            {move=V.new(1,0,0),look=V.new(0,0,-1),tail=-V.xAxis},
+            {move=V.new(0,0,-1),look=V.yAxis,tail=-V.yAxis},
+            {move=V.new(0,0,-1),look=-V.yAxis,tail=V.yAxis},
+        }
+        for _,case in ipairs(cases) do
+            w.move=case.move;w.env.workspace.CurrentCamera.CFrame.LookVector=case.look;w.step(120)
+            assert(flow():Dot(case.tail)>.99,'flames did not follow world-space direction')
+            assert(flame.Acceleration.Unit:Dot(case.tail)>.99)
+            local beam=find(r,'FlyDBZHotFlame')
+            local displacement=r.CFrame:VectorToWorldSpace(beam.Attachment1.Position-beam.Attachment0.Position)
+            assert(displacement:Dot(case.tail)>7,'meteor envelope did not trail movement')
+            assert(find(r,'FlyDBZMeteorTrail').Enabled)
+        end
+        w.move=V.zero;w.step(180)
+        assert(flow():Dot(V.yAxis)>.99 and not find(r,'FlyDBZMeteorTrail').Enabled)
+        g:Destroy();noOwnedObjects(w)
+    end)
+    test('reversing and rotated characters keep a continuous finite flame axis', function()
+        local w,g,_,_,r=launch({playerModule=true});local V=w.env.Vector3
+        r.CFrame=w.env.CFrame.fromMatrix(V.zero,V.new(0,0,-1),V.yAxis,V.xAxis)
+        w.move=V.new(0,0,-1);click(g);w.step(120)
+        local flame=find(r,'FlyDBZFlame')
+        local function flow() return r.CFrame:VectorToWorldSpace(flame.Parent.CFrame.UpVector) end
+        assert(flow():Dot(V.zAxis)>.99,'root rotation changed the world flow')
+        w.move=V.new(0,0,1);local previous=flow()
+        for _=1,90 do
+            w.step(2);local nextFlow=flow()
+            near(nextFlow.Magnitude,1)
+            assert(previous:Dot(nextFlow)>.7,'flame snapped during a half-turn')
+            previous=nextFlow
+        end
+        assert(flow():Dot(-V.zAxis)>.99)
+        click(g);w.step(8);assert(flow():Dot(-V.zAxis)>.99,'fade snapped upright')
+        w.step(45);assert(not find(r,'FlyDBZMeteorTrail').Enabled)
+        g:Destroy();noOwnedObjects(w)
+    end)
+    test('extreme editable speeds keep finite bounded meteor geometry without allocations', function()
+        local w,g,_,_,r=launch();click(g);local box=find(g,'SpeedValue')
+        box.Text='3e38';box.FocusLost:Fire(true);w.keys.W=true;w.step(120)
+        local objects=#w.objects;w.keys={S=true};w.step(120)
+        for _,o in ipairs(r:GetDescendants()) do
+            if o:IsA('Beam') then
+                local delta=o.Attachment1.Position-o.Attachment0.Position
+                assert(delta.Magnitude==delta.Magnitude and delta.Magnitude<18,'unbounded flame geometry')
+                assert(o.Width0>0 and o.Width0<6)
+            end
+        end
+        local trail=find(r,'FlyDBZMeteorTrail')
+        assert(trail.Enabled and trail.MaxLength>0 and trail.MaxLength<=16)
+        assert(#w.objects==objects,'changing direction created VFX instances')
+        g:Destroy();noOwnedObjects(w)
+    end)
+    test('GUI fire stays alive without a character and follows a dragged panel', function()
+        local w,g,c=launch();w.step(60)
+        local layer=find(g,'WindowFireLayer');local sprite=find(layer,'GuiFlame')
+        local window=find(g,'Window');local previous=sprite.Position
+        w.player.CharacterRemoving:Fire(c);w.player.Character=nil;c.Parent=nil;w.step(20)
+        assert(sprite.ImageTransparency<1 and sprite.Position~=previous)
+        assert(not layer.Active and not sprite.Active,'decoration captures input')
+        local input={UserInputType=w.env.Enum.UserInputType.Touch,Position=w.env.Vector3.new(50,50)}
+        find(g,'DragHandle').InputBegan:Fire(input);input.Position=w.env.Vector3.new(130,90)
+        w.services.UserInputService.InputChanged:Fire(input)
+        assert(layer.Position==window.Position,'fire detached during dragging')
+        w.services.UserInputService.InputEnded:Fire(input)
+        local objects=#w.objects;w.step(120);assert(#w.objects==objects)
+        click(g,'Close');w.step(60)
+        assert(layer._destroying and sprite._destroying);noOwnedObjects(w)
+    end)
+    test('quality notice persists through time, toggles and respawn until explicit dismissal', function()
+        local w,g=launch();local notice=find(g,'QualityNotice')
+        assert(find(notice,'QualityMessage').Text=="For better quality, use Roblox's high graphics settings.")
+        assert(notice.Position.X.Scale==.5 and notice.Position.Y.Scale==.5)
+        w.step(900);click(g);w.step(60);w.character();w.step(60);click(g)
+        assert(notice.Parent==g and notice.GroupTransparency==0)
+        assert(not g:GetAttribute('QualityNoticeDismissed'))
+        click(g,'DismissQualityNotice');w.step(7)
+        assert(notice.Parent==g and notice.GroupTransparency>0 and notice.GroupTransparency<1)
+        w.step(12);assert(notice.Parent==nil and g:GetAttribute('QualityNoticeDismissed'))
+        click(g);w.character();w.step(60);assert(not g:FindFirstChild('QualityNotice'))
+        assert(find(g,'Window').Parent==g and g:GetAttribute('FlightEnabled'),'dismissal stopped flight')
+        g:Destroy();noOwnedObjects(w)
+    end)
+    test('manual GUI close and reexecution safely dispose of the persistent notice', function()
+        local w,g=launch();local notice=find(g,'QualityNotice');click(g,'Close');w.step(60)
+        assert(notice._destroying);noOwnedObjects(w)
+        w.run(source);g=find(w.pg,'FlyDBZ');notice=find(g,'QualityNotice')
+        assert(not g:GetAttribute('QualityNoticeDismissed'))
+        click(g,'DismissQualityNotice');w.run(source);w.step(60)
+        local nextGui=find(w.pg,'FlyDBZ')
+        assert(notice._destroying and find(nextGui,'QualityNotice').GroupTransparency==0)
+        nextGui:Destroy();noOwnedObjects(w)
     end)
     print(tostring(count)..' behavioral tests passed; Roblox visual/physics validation remains manual.')
 end
