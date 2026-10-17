@@ -8,35 +8,35 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/hzReyzn/FLY-SSJ3/main
 
 ## Uso
 
-- El panel compacto empieza en **OFF**. Toca la fila para activar o desactivar el vuelo.
-- **SPEED:** toca el número para escribir la velocidad y confirma con Enter o sal del campo. Los botones **− / +** y la rueda del ratón sobre esa fila ajustan de **2 en 2**. El cambio se aplica durante el vuelo y se conserva al reaparecer. Empieza en **58**; **0** mantiene la suspensión. No hay máximo configurado: se aceptan valores no negativos y finitos que Roblox pueda representar; entradas vacías, inválidas o infinitas restauran el último valor.
-- **Android:** joystick normal. **PC:** W, A, S, D. Dirige la cámara hacia arriba o abajo y avanza para cambiar de altura. Al soltar el movimiento, frena suavemente y queda flotando.
-- Arrastra el título **FLY DBZ** para mover el panel. La **×** apaga el vuelo y retira todos los recursos de esta instancia del script.
-- El aviso centrado **“For better quality, use Roblox's high graphics settings.”** permanece visible hasta tocar **OK** o cerrar el script. No tiene temporizador y no se elimina al activar el vuelo, morir o reaparecer. No cambia la configuración gráfica de Roblox.
-- Si mueres con el vuelo en ON, la preferencia se conserva y el vuelo vuelve al reaparecer. Si estaba OFF, sigue OFF.
-- **No Fall Damage** queda armado automáticamente, sin botón, en Natural Disaster Survival (`PlaceId = 189707`), igual que el script proporcionado. Continúa con el vuelo apagado y tras reaparecer; se retira al cerrar el panel. La manipulación local de velocidad no constituye una protección universal contra daño calculado por el servidor.
+- El panel empieza en **OFF** y con velocidad **5**. El interruptor activa el vuelo, su animación y No Fall Damage en el juego compatible. OFF apaga las tres funciones.
+- **SPEED:** toca el número para escribir la velocidad y confirma con Enter o sal del campo. Los botones **− / +** y la rueda del ratón sobre esa fila ajustan de **5 en 5**. El intervalo es **5–5000**; las entradas numéricas se redondean a enteros y se limitan a ese intervalo. Texto vacío, inválido o infinito conserva el último valor.
+- La velocidad se puede cambiar **durante el vuelo**, sin apagarlo ni recrear sus controles o animación. El valor elegido se conserva después de morir, aunque las funciones quedan apagadas.
+- **Android:** joystick normal. **PC:** W, A, S, D. Dirige la cámara hacia arriba o abajo y avanza para cambiar de altura. Al soltar el movimiento, frena suavemente y queda flotando. Escribir en un campo detiene el desplazamiento sin desactivar el vuelo.
+- Arrastra el título **FLY DBZ** para mover el panel. La **×** apaga las funciones y elimina inmediatamente el GUI y los recursos de esta ejecución.
 
-## Aura
+## Muerte y reinicio
 
-Aura local amarilla y semidorada inspirada en la referencia del meteorito: envoltura de fuego con centro amarillo claro, capas exteriores doradas/naranjas y chispas. Cuatro pares de capas curvas texturizadas permanecen alrededor del cuerpo; otros cuatro forman una cola independiente. Una estela nativa corta conserva el recorrido reciente del personaje.
+Al morir, reiniciar o cambiar de personaje, el interruptor vuelve a **OFF**. Se retiran los controles físicos, se detienen y destruyen las pistas de animación, se cancela cualquier carga anterior y se desactiva No Fall Damage. Si había un pulso pendiente de velocidad, se restaura sin sobrescribir un cambio externo.
 
-Al moverse, la cola se inclina en dirección contraria al desplazamiento: delante, atrás, ambos lados, ascenso y descenso. Los puntos de emisión principales permanecen en los pies y alrededor del cuerpo, con una inclinación leve; no se trasladan todos a un aro giratorio. La orientación usa la velocidad suavizada del controlador para que el pulso de No Fall Damage no provoque temblores. Los giros tienen velocidad angular limitada y la cola se atenúa durante una inversión brusca, mientras el fuego del cuerpo permanece visible. Al detenerse, la cola desaparece antes de recuperar su orientación inicial. El aura se revela durante 0.9 s y se desvanece durante 0.6 s al apagar el vuelo. No incluye audio, vídeo ni efectos globales de iluminación.
+Reaparecer **no reactiva nada automáticamente**. Es necesario pulsar ON de nuevo con el personaje vivo y disponible. Pulsar mientras el personaje está muerto o incompleto no deja una activación pendiente. Reemplazar el Humanoid o la raíz también obliga a activar manualmente. Una suspensión temporal por asiento o anclaje, dentro del mismo personaje vivo, mantiene la solicitud de vuelo y reanuda al liberarse.
 
-Los 22 emisores, 16 `Beam` y un `Trail` se reutilizan por personaje. Las vidas y tasas de emisión mantienen un presupuesto teórico inferior a 200 partículas continuas al completar el encendido, además de la ráfaga inicial. La estela dura 0.18 s y tiene una longitud máxima de 8 studs; se limpia ante saltos grandes de posición para evitar unir lugares distantes. La geometría visual permanece acotada aunque se introduzcan velocidades muy grandes. Roblox simula las partículas, la estela y el desplazamiento de las texturas; la intensidad y la geometría de las capas se actualizan a 30 Hz. No se crean instancias ni secuencias nuevas cada fotograma. Los controles físicos se actualizan antes de la simulación mediante `LinearVelocity` y `AlignOrientation`.
+No Fall Damage conserva el filtro de Natural Disaster Survival (`PlaceId = 189707`). Solo actúa durante una sesión de vuelo activa en ese juego. La técnica local de velocidad no garantiza protección frente a todos los sistemas de daño calculados en servidor.
 
-El panel conserva sus medidas y controles, con carbón metálico, reflejos dorados suaves y una pequeña aura exterior de fuego. Solo aparece en **ON** y se desvanece hasta ocultarse completamente en **OFF**. Las llamas usan 24 grupos reutilizados de tres superficies con degradados cálidos, superpuestos detrás del panel; no usan las pequeñas imágenes oscuras y separadas de la versión anterior. No tapan el texto ni capturan pulsaciones, acompañan el arrastre y siguen encendidas durante la reaparición si el vuelo continúa en ON. Una vez ocultas, dejan de actualizar su geometría.
+## Interfaz
+
+Panel compacto de 240 × 156, carbón y gris, texto claro y controles táctiles separados. El número de velocidad tiene más espacio y los botones de incremento/decremento miden 44 × 44. El botón del límite alcanzado se muestra atenuado. Se mantienen el arrastre y el interruptor ON/OFF.
+
+No contiene fuego, aura, partículas, estelas, luces, destellos, reflejos en movimiento ni aviso gráfico. Solo quedan el GUI, el controlador de vuelo y las animaciones del personaje. Las transiciones del interruptor son ajustes simples del propio control.
 
 ## Animaciones y visibilidad
 
 Paquete solicitado: [SSJ3 Goku DBZ Animation Pack](https://www.roblox.com/bundles/146661355470855/SSJ3-Goku-DBZ-Animation-Pack), de AvatarVerse. Los IDs y la procedencia están registrados en [`docs/animation-pack.json`](docs/animation-pack.json).
 
-El script obtiene los clips internos de los paquetes Idle, Run, Climb y Fall y los reproduce con transiciones sobre el **Animator ya existente** del personaje. Los objetos importados se inspeccionan sin introducirlos en el mundo y luego se destruyen; no se ejecuta código importado.
+Los clips Idle, Run, Climb y Fall se resuelven y cargan únicamente al activar ON, sobre el **Animator ya existente** del personaje. Los objetos importados se inspeccionan sin introducirlos en el mundo y luego se destruyen; no se ejecuta código importado. Las pistas de una activación anterior nunca se reproducen después de apagar o cambiar de personaje.
 
-**La animación requiere R15 y permiso de Roblox para cargar los assets.** La consulta pública de los contenidos internos respondió HTTP 401 durante el desarrollo; esos IDs no se inventaron ni se confundieron con los IDs del catálogo. La resolución se intenta dentro del cliente mediante `game:GetObjects`, que requiere un contexto autorizado y no está disponible en un LocalScript estándar. Si la resolución o los permisos fallan, el vuelo y el aura siguen funcionando y se informa en la consola. No se sustituye el personaje ni se crea un Animator local para aparentar replicación.
+**El paquete requiere R15 y permiso de Roblox para cargar los assets.** La resolución mediante `game:GetObjects` requiere un contexto autorizado y no está disponible en un LocalScript estándar. Si la resolución o los permisos fallan, el vuelo continúa disponible y se informa en consola. No se sustituye el personaje ni se crea un Animator local. En R6 se conserva el vuelo sin aplicar el paquete R15.
 
-Según la [documentación de Animator](https://create.roblox.com/docs/reference/engine/classes/Animator), las animaciones del cliente propietario pueden replicarse cuando su Animator fue creado en el servidor. Este script utiliza esa ruta; no puede garantizar que otro juego permita todos los assets. En R6 no se aplica este paquete R15.
-
-**El aura es visible en el cliente que ejecuta el script.** Para mostrar emisores a todos los jugadores se necesita implementar el efecto en el servidor de una experiencia que controles; un script local en un juego ajeno no lo puede garantizar.
+Según la [documentación de Animator](https://create.roblox.com/docs/reference/engine/classes/Animator), las animaciones del cliente propietario pueden replicarse cuando su Animator fue creado en el servidor. El script utiliza ese Animator; no garantiza que otro juego permita todos los assets.
 
 ## Verificación
 
@@ -44,6 +44,6 @@ Según la [documentación de Animator](https://create.roblox.com/docs/reference/
 python tests/run.py /ruta/a/luau
 ```
 
-Compilación con Luau y 35 pruebas deterministas: estado inicial, movimiento de teclado y joystick, cámara inclinada, pausa al escribir o perder foco, respawn, piezas tardías/reemplazadas, permisos de animación, aparición y retirada del aura, seis direcciones de movimiento, inversión suave, personaje rotado, geometría acotada a velocidades extremas, objetos reutilizados, fuego del panel durante arrastre y ausencia de personaje, apagado completo en OFF y ausencia de actualizaciones ocultas, emisión estable junto al cuerpo, atenuación de la cola al invertir dirección, limpieza de estelas ante cambios discontinuos de posición, aviso persistente y cierre manual, velocidad editable, pasos de 2, rueda, valores grandes/decimales/inválidos, reejecución, cierre y restauración de velocidad. El arnés comprueba la lógica y los recursos; **no ejecuta física, renderiza partículas ni simula la replicación de Roblox**.
+Compilación Luau y **26 pruebas de comportamiento**: inicio apagado, ausencia de efectos/aviso, protección vinculada a ON, restauración de velocidad, filtros del juego, teclado/joystick, pérdida de foco, animaciones y permisos, muerte/reset, piezas y Animator tardíos o reemplazados, cancelación de cargas anteriores, reejecución, arrastre, cierre, límites de velocidad, pasos de 5, cambios durante el vuelo y conservación de ajustes tras morir.
 
-Pendiente de comprobación en Roblox: aspecto final del fuego en Android, vuelo en la experiencia de destino, efectividad del No Fall Damage y visibilidad del paquete desde un segundo cliente R15 autorizado. El código no modifica los scripts del repositorio Reyzn X.
+Las pruebas verifican lógica y limpieza de recursos; **no ejecutan la física, el renderizado ni la replicación de Roblox**. La comprobación en la experiencia de destino sigue siendo manual. Esta modificación no cambia el repositorio Reyzn X.
