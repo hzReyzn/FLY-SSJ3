@@ -1,0 +1,17 @@
+{
+  "bundleId": 146661355470855,
+  "name": "SSJ3 Goku DBZ Animation Pack",
+  "creator": "AvatarVerse",
+  "source": "https://catalog.roblox.com/v1/bundles/146661355470855/details",
+  "checked": "2026-10-17",
+  "items": {
+    "Idle": 102994438121065,
+    "Walk": 98217934389093,
+    "Run": 107411587365865,
+    "Jump": 92844137321144,
+    "Fall": 138553022046795,
+    "Climb": 82749924026067,
+    "Swim": 88295483220725
+  },
+  "note": "Catalog entries are animation packages. Their internal AnimationId must be resolved in Roblox with asset permission; unauthenticated asset delivery returned HTTP 401."
+}
