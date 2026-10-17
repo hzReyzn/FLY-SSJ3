@@ -1,6 +1,6 @@
 # FLY DBZ · 1.0
 
-Script independiente de Reyzn X: [`FLY-SSJ3.lua`](FLY-SSJ3.lua).
+Script con GUI independiente, también integrado como **FLY SS3 FE** en Main de Reyzn X: [`FLY-SSJ3.lua`](FLY-SSJ3.lua).
 
 ```lua
 loadstring(game:HttpGet("https://raw.githubusercontent.com/hzReyzn/FLY-SSJ3/main/FLY-SSJ3.lua"))()
@@ -21,6 +21,14 @@ Al morir, reiniciar o cambiar de personaje, el interruptor vuelve a **OFF**. Se 
 Reaparecer **no reactiva nada automáticamente**. Es necesario pulsar ON de nuevo con el personaje vivo y disponible. Pulsar mientras el personaje está muerto o incompleto no deja una activación pendiente. Reemplazar el Humanoid o la raíz también obliga a activar manualmente. Una suspensión temporal por asiento o anclaje, dentro del mismo personaje vivo, mantiene la solicitud de vuelo y reanuda al liberarse.
 
 No Fall Damage conserva el filtro de Natural Disaster Survival (`PlaceId = 189707`). Solo actúa durante una sesión de vuelo activa en ese juego. La técnica local de velocidad no garantiza protección frente a todos los sistemas de daño calculados en servidor.
+
+## Prioridad de Reyzn X
+
+Mientras **No Fall Damage** de Reyzn X esté ON, la protección propia de FLY queda suspendida. El vuelo, su velocidad y la animación siguen funcionando. Al apagar la principal o cerrar el Hub, FLY recupera su protección únicamente si su interruptor continúa ON y el personaje es válido. Morir sigue dejando FLY completamente OFF; apagar la principal no lo reactiva.
+
+Ambos controladores comparten un registro local de prioridad y una sola velocidad pendiente. Antes de cambiar de propietario se termina la restauración anterior; los callbacks del otro controlador no pueden restaurar un pulso ajeno. Funciona con cualquiera de los dos órdenes de ejecución, sin depender de variables globales compartidas. Al cerrar ambos GUI se elimina el registro. No agrega efectos visuales ni cambia la versión 1.0.
+
+El código del coordinador está en [`runtime/NoFallDamageLease.luau`](runtime/NoFallDamageLease.luau) y se incluye dentro del archivo distribuido. Después de modificarlo, ejecuta `python tools/build.py`. No se descarga código adicional en tiempo de ejecución.
 
 ## Interfaz
 
@@ -46,4 +54,4 @@ python tests/run.py /ruta/a/luau
 
 Compilación Luau y **26 pruebas de comportamiento**: inicio apagado, ausencia de efectos/aviso, protección vinculada a ON, restauración de velocidad, filtros del juego, teclado/joystick, pérdida de foco, animaciones y permisos, muerte/reset, piezas y Animator tardíos o reemplazados, cancelación de cargas anteriores, reejecución, arrastre, cierre, límites de velocidad, pasos de 5, cambios durante el vuelo y conservación de ajustes tras morir.
 
-Las pruebas verifican lógica y limpieza de recursos; **no ejecutan la física, el renderizado ni la replicación de Roblox**. La comprobación en la experiencia de destino sigue siendo manual. Esta modificación no cambia el repositorio Reyzn X.
+Las pruebas verifican lógica y limpieza de recursos; **no ejecutan la física, el renderizado ni la replicación de Roblox**. La comprobación en la experiencia de destino sigue siendo manual. El repositorio Ghislain añade 15 escenarios de integración que ejecutan los dos scripts juntos, incluyendo cambios de prioridad entre pulsos, callbacks retrasados, muerte, reejecución y cierre.

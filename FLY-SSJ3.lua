@@ -11,6 +11,112 @@ local player = Players.LocalPlayer
 if not player then return end
 local playerGui = player:WaitForChild("PlayerGui")
 
+-- BEGIN NO FALL COORDINATOR
+local createNoFallLease = (function()
+-- Shared, client-local ownership of a velocity pulse. No callbacks yield here.
+-- The ledger lives in PlayerGui so separately executed scripts can cooperate
+-- without depending on shared Lua globals or on signal delivery order.
+return function(ownerGui, priority)
+    local parent = ownerGui.Parent
+    local ledger = parent:FindFirstChild("ReyznNoFallDamage_v1")
+    local function value(class, name, container, initial)
+        local object = Instance.new(class)
+        object.Name = name
+        object.Value = initial
+        object.Parent = container
+        return object
+    end
+    if not ledger then
+        ledger = Instance.new("Folder")
+        ledger.Name = "ReyznNoFallDamage_v1"
+        local clients = Instance.new("Folder")
+        clients.Name = "Clients"
+        clients.Parent = ledger
+        value("ObjectValue", "Owner", ledger, nil)
+        value("ObjectValue", "PendingOwner", ledger, nil)
+        value("ObjectValue", "Root", ledger, nil)
+        value("ObjectValue", "Character", ledger, nil)
+        value("Vector3Value", "Velocity", ledger, Vector3.zero)
+        ledger.Parent = parent
+    end
+    local clients = ledger:FindFirstChild("Clients")
+    local owner = ledger:FindFirstChild("Owner")
+    local pending = ledger:FindFirstChild("PendingOwner")
+    local rootValue = ledger:FindFirstChild("Root")
+    local characterValue = ledger:FindFirstChild("Character")
+    local velocityValue = ledger:FindFirstChild("Velocity")
+    local token = value("ObjectValue", ownerGui.Name.."Lease", clients, ownerGui)
+    token:SetAttribute("Priority", priority)
+    token:SetAttribute("Enabled", false)
+    local disposed = false
+    local destructionConnection
+    local lease = {changed = owner:GetPropertyChangedSignal("Value")}
+
+    local function restorePending()
+        local root, character, velocity = rootValue.Value, characterValue.Value, velocityValue.Value
+        pending.Value = nil
+        rootValue.Value = nil
+        characterValue.Value = nil
+        if root and character and root.Parent == character and not root.Anchored
+            and root.AssemblyLinearVelocity == Vector3.zero then
+            root.AssemblyLinearVelocity = velocity
+        end
+    end
+    local function chooseOwner()
+        local winner, best = nil, -math.huge
+        for _, candidate in ipairs(clients:GetChildren()) do
+            local gui = candidate.Value
+            local rank = candidate:GetAttribute("Priority")
+            if gui and gui.Parent == parent and candidate:GetAttribute("Enabled") and rank > best then
+                winner, best = candidate, rank
+            end
+        end
+        if owner.Value ~= winner then
+            -- Finish the outgoing pulse before publishing the incoming owner.
+            -- A queued restore from the old script then cannot touch the new one.
+            restorePending()
+            owner.Value = winner
+        end
+    end
+    function lease:isOwner()
+        return not disposed and owner.Value == token and token:GetAttribute("Enabled") == true
+    end
+    function lease:setEnabled(enabled)
+        if disposed then return end
+        if token:GetAttribute("Enabled") ~= enabled then
+            token:SetAttribute("Enabled", enabled)
+            chooseOwner()
+        end
+    end
+    function lease:restore()
+        if not disposed and pending.Value == token then restorePending() end
+    end
+    function lease:pulse(root)
+        if not self:isOwner() then return false end
+        self:restore()
+        if not root.Parent or root.Anchored then return false end
+        rootValue.Value = root
+        characterValue.Value = root.Parent
+        velocityValue.Value = root.AssemblyLinearVelocity
+        pending.Value = token
+        root.AssemblyLinearVelocity = Vector3.zero
+        return true
+    end
+    function lease:destroy()
+        if disposed then return end
+        self:restore()
+        self:setEnabled(false)
+        disposed = true
+        if destructionConnection then destructionConnection:Disconnect() end
+        token:Destroy()
+        if #clients:GetChildren() == 0 then ledger:Destroy() end
+    end
+    destructionConnection = ownerGui.Destroying:Connect(function() lease:destroy() end)
+    return lease
+end
+end)()
+-- END NO FALL COORDINATOR
+
 local CONFIG = {
     Speed = 5,
     MinSpeed = 5,
@@ -33,7 +139,6 @@ local alive, closing, wantedFlight, focused = true, false, false, true
 local connections, characterConnections, bodyConnections = {}, {}, {}
 local activeTweens, reported = {}, {}
 local currentCharacter, body, controls
-local pendingVelocity
 local flightSpeed = CONFIG.Speed
 local function make(class, properties, parent)
     local object = Instance.new(class)
@@ -83,6 +188,12 @@ gui:SetAttribute("FlightEnabled", false)
 gui:SetAttribute("NoFallDamageArmed", false)
 gui:SetAttribute("AnimationStatus", "Idle")
 gui:SetAttribute("FlightSpeed", flightSpeed)
+-- Reyzn X owns priority 100; this independent flight window uses priority 10.
+local noFallLease = createNoFallLease(gui, 10)
+gui:SetAttribute("NoFallCoordinatorVersion", 1)
+connect(connections, noFallLease.changed, function()
+    if alive then gui:SetAttribute("NoFallDamageArmed", noFallLease:isOwner()) end
+end)
 local window = make("CanvasGroup", {
     Name = "Window", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -22, 0, 80),
     Size = UDim2.fromOffset(240, 156), BackgroundColor3 = C(25, 27, 32), ZIndex = 3,
@@ -327,15 +438,11 @@ end
 -- Two non-yielding phases replace the supplied Heartbeat callback's yielding
 -- RenderStepped:Wait(). A pending write is restored before physics or on cleanup.
 local function restoreVelocity()
-    local pending = pendingVelocity
-    pendingVelocity = nil
-    if pending and pending.root.Parent == pending.character
-        and pending.root.AssemblyLinearVelocity == ZERO then
-        pending.root.AssemblyLinearVelocity = pending.velocity
-    end
+    noFallLease:restore()
 end
 local function stopFlight(b)
     restoreVelocity()
+    noFallLease:setEnabled(false)
     local wasFlying = b.flying
     b.flying = false
     b.smoothed = ZERO
@@ -372,7 +479,8 @@ local function startFlight(b)
         CFrame = b.root.CFrame.Rotation,
     }, b.root)
     b.smoothed = ZERO
-    gui:SetAttribute("NoFallDamageArmed", game.PlaceId == CONFIG.NoFallPlaceId)
+    noFallLease:setEnabled(game.PlaceId == CONFIG.NoFallPlaceId)
+    gui:SetAttribute("NoFallDamageArmed", noFallLease:isOwner())
     local animator = b.humanoid:FindFirstChildOfClass("Animator")
     if animator then loadAnimations(b, animator) end
     return true
@@ -540,9 +648,7 @@ connect(connections, RunService.Heartbeat, function()
     local b = body
     if not wantedFlight or not b or not b.flying or not validBody(b)
         or game.PlaceId ~= CONFIG.NoFallPlaceId or b.root.Anchored then return end
-    restoreVelocity()
-    pendingVelocity = {root = b.root, character = currentCharacter, velocity = b.root.AssemblyLinearVelocity}
-    b.root.AssemblyLinearVelocity = ZERO
+    noFallLease:pulse(b.root)
 end)
 connect(connections, RunService.RenderStepped, restoreVelocity)
 
@@ -555,6 +661,7 @@ local function cleanup()
     disconnectAll(connections)
     disconnectAll(characterConnections)
     releaseBody()
+    noFallLease:destroy()
     for _, animation in pairs(activeTweens) do animation:Cancel() end
     table.clear(activeTweens)
     controls, currentCharacter = nil, nil
@@ -567,3 +674,4 @@ connect(connections, close.Activated, function()
     gui:Destroy()
 end)
 if player.Character then bindCharacter(player.Character) end
+return gui

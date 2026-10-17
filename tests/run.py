@@ -6,6 +6,8 @@ import sys
 root = Path(__file__).resolve().parents[1]
 luau = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path("luau")
 source = (root / "FLY-SSJ3.lua").read_text()
+module = (root / "runtime/NoFallDamageLease.luau").read_text()
+assert "local createNoFallLease = (function()\n" + module + "end)()" in source, "Rebuild the coordinator with tools/build.py"
 compiler = luau.with_name("luau-compile")
 if compiler.is_file():
     subprocess.run([str(compiler), str(root / "FLY-SSJ3.lua")], check=True, stdout=subprocess.DEVNULL)
