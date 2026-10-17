@@ -259,48 +259,69 @@ connect(connections, Input.InputChanged, function(input)
     end
 end)
 
--- A small pooled 2D fire rim lives outside the CanvasGroup so its flames are
--- not clipped. The opaque card covers the inward half, keeping controls clear.
+-- Overlapping, tapered tongues of warm light, behind the card. These native
+-- gradient surfaces avoid the dark particle-texture stamps seen in normal UI
+-- blending. The pool is completely hidden in OFF, after its short fade.
 local uiFireLayer = make("Frame", {Name = "WindowFireLayer", BackgroundTransparency = 1,
     AnchorPoint = window.AnchorPoint, Position = window.Position, Size = window.Size,
     ClipsDescendants = false, Active = false, ZIndex = 1}, gui)
 local uiFireScale = make("UIScale", {Scale = windowScale.Scale}, uiFireLayer)
 connect(connections, window:GetPropertyChangedSignal("Position"), function() uiFireLayer.Position = window.Position end)
 local uiFire = {clock = 0, strength = 0, particles = {}}
-for i = 1, 18 do
-    local edge = i <= 8 and "top" or (i <= 12 and "left" or (i <= 16 and "right" or "bottom"))
-    local along = edge == "top" and ((i - 0.5) / 8)
-        or (edge == "left" and ((i - 8.5) / 4) or (edge == "right" and ((i - 12.5) / 4) or ((i - 16.5) / 2)))
-    local sprite = make("ImageLabel", {Name = "GuiFlame", BackgroundTransparency = 1,
-        Image = FIRE_TEXTURE, ImageColor3 = C(255, 208, 70), ImageTransparency = 1,
-        AnchorPoint = Vector2.new(0.5, 0.8), Size = UDim2.fromOffset(16, 24),
-        ZIndex = 1, Active = false}, uiFireLayer)
-    uiFire.particles[#uiFire.particles + 1] = {object = sprite, edge = edge, along = along,
-        phase = (i * 0.61803398875) % 1, life = 0.8 + (i % 5) * 0.11}
+uiFireLayer.Visible = false
+local flameFade = NumberSequence.new({NumberSequenceKeypoint.new(0, 1),
+    NumberSequenceKeypoint.new(0.18, 0.18), NumberSequenceKeypoint.new(0.65, 0),
+    NumberSequenceKeypoint.new(1, 0.7)})
+for i = 1, 24 do
+    local edge = i <= 14 and "top" or (i <= 18 and "left" or (i <= 22 and "right" or "bottom"))
+    local along = edge == "top" and ((i - 0.5) / 14)
+        or (edge == "left" and ((i - 14.5) / 4) or (edge == "right" and ((i - 18.5) / 4) or ((i - 22.5) / 2)))
+    local layers = {}
+    for layer = 1, 3 do
+        local sprite = make("Frame", {Name = "GuiFlame", BackgroundTransparency = 1,
+            BackgroundColor3 = layer == 1 and C(255, 165, 32) or (layer == 2 and C(255, 203, 62) or C(255, 240, 151)),
+            BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 1),
+            Size = UDim2.fromOffset(12, 18), ZIndex = 1, Active = false}, uiFireLayer)
+        round(sprite, 12)
+        local shade = gradient(sprite, {ColorSequenceKeypoint.new(0, C(255, 193, 81)),
+            ColorSequenceKeypoint.new(1, C(255, 255, 255))}, 90)
+        shade.Transparency = flameFade
+        layers[layer] = sprite
+    end
+    uiFire.particles[#uiFire.particles + 1] = {layers = layers, edge = edge, along = along,
+        phase = (i * 0.61803398875) % 1, life = 0.95 + (i % 5) * 0.13}
 end
 function uiFire:Update(dt)
     self.clock += dt
-    local strengthTarget = closing and 0 or (wantedFlight and 0.74 or 0.29)
-    self.strength += (strengthTarget - self.strength) * (1 - math.exp(-7 * dt))
+    local strengthTarget = not closing and wantedFlight and 0.9 or 0
+    self.strength += (strengthTarget - self.strength) * (1 - math.exp(-9 * dt))
+    if strengthTarget == 0 and self.strength < 0.002 then self.strength = 0 end
     local visibility = self.strength * (1 - window.GroupTransparency)
     uiFireScale.Scale = windowScale.Scale
+    uiFireLayer.Visible = visibility > 0
+    -- No sprite work while OFF. Keep only the small metallic surface sheen.
+    frameSheen.Offset = Vector2.new(math.sin(self.clock * 0.48) * 0.45, 0)
+    toggleSheen.Offset = Vector2.new(math.sin(self.clock * 0.7) * 0.22, 0)
+    if visibility == 0 then return end
     local width, height = window.Size.X.Offset, window.Size.Y.Offset
     for _, particle in ipairs(self.particles) do
         local age = (self.clock / particle.life + particle.phase) % 1
-        local envelope = math.sin(age * math.pi)
-        local drift = math.sin(age * 5 + particle.phase * 11) * 3
+        local envelope = math.sin(age * math.pi) ^ 0.8
+        local sway = math.sin(self.clock * 2.5 + particle.phase * 11)
+        local tongueHeight = 13 + envelope * (12 + particle.phase * 7)
         local x, y
-        if particle.edge == "top" then x, y = width * particle.along + drift, 5 - age * 21
-        elseif particle.edge == "bottom" then x, y = width * particle.along + drift, height + 10 - age * 17
-        else x, y = particle.edge == "left" and -3 - envelope * 5 or width + 3 + envelope * 5,
-            height * particle.along - age * 18 end
-        particle.object.Position = UDim2.fromOffset(x, y)
-        particle.object.Size = UDim2.fromOffset(12 + envelope * 10, 18 + envelope * 17)
-        particle.object.Rotation = drift * 2
-        particle.object.ImageTransparency = 1 - visibility * envelope * 0.82
+        if particle.edge == "top" then x, y = width * particle.along, 7
+        elseif particle.edge == "bottom" then x, y = width * particle.along, height + 6
+        else x, y = particle.edge == "left" and 1 or width - 1, height * particle.along + 10 end
+        for layer, sprite in ipairs(particle.layers) do
+            local outer, core = layer == 1, layer == 3
+            sprite.Position = UDim2.fromOffset(x + sway * (core and 1 or 2), y)
+            sprite.Size = UDim2.fromOffset(outer and 27 or (core and 5 or 11),
+                tongueHeight * (outer and 0.72 or (core and 0.62 or 1)))
+            sprite.Rotation = sway * (outer and 5 or 13)
+            sprite.BackgroundTransparency = 1 - visibility * envelope * (outer and 0.18 or (core and 0.7 or 0.46))
+        end
     end
-    frameSheen.Offset = Vector2.new(math.sin(self.clock * 0.48) * 0.45, 0)
-    toggleSheen.Offset = Vector2.new(math.sin(self.clock * 0.7) * 0.22, 0)
 end
 
 -- This notice has no timeout and does not block the joystick outside its card.
@@ -342,8 +363,8 @@ end)
 tween(notice, 0.4, {GroupTransparency = 0})
 tween(noticeScale, 0.4, {Scale = 1})
 
--- A fixed pool of textured fire sheets and particles, with a bounded native
--- trail. There are no untextured core lines. Motion bends the whole envelope.
+-- A close, body-anchored flame envelope plus a separately steered wake. Only
+-- the wake turns with velocity; the whole aura no longer rolls around the body.
 -- All attachments stay on this character. No global lighting, sound or new
 -- instances/NumberSequences per animation frame.
 local Aura = {}
@@ -375,11 +396,11 @@ end
 function Aura.new(root, humanoid)
     local self = setmetatable({objects = {}, emitters = {}, ribbons = {}, clock = 0,
         running = false, reveal = 0, targetOn = false, root = root,
-        axis = Vector3.yAxis, across = Vector3.xAxis, motion = 0}, Aura)
+        axis = Vector3.yAxis, across = Vector3.xAxis, motion = 0, alignment = 0}, Aura)
     self.level = make("NumberValue", {Name = "FlyDBZAuraLevel", Value = 0})
     self.objects[#self.objects + 1] = self.level
     local bottom = -math.max(2.7, humanoid.HipHeight + root.Size.Y * 0.5)
-    local height = math.max(6.4, humanoid.HipHeight + root.Size.Y + 4.2)
+    local height = math.max(6.2, humanoid.HipHeight + root.Size.Y + 2.4)
     local radiusX = math.max(1.3, root.Size.X * 0.65)
     local radiusZ = math.max(0.95, root.Size.Z * 0.7)
     local gold = ColorSequence.new({
@@ -393,19 +414,19 @@ function Aura.new(root, humanoid)
         NumberSequenceKeypoint.new(0.4, 0.12), NumberSequenceKeypoint.new(0.78, 0.44),
         NumberSequenceKeypoint.new(1, 1),
     })
-    local function emitterAt(position, gate, size, rate, index, spark)
+    local function emitterAt(position, gate, size, rate, index, spark, wake)
         local attachment = make("Attachment", {Name = "FlyDBZAuraAnchor", Position = position}, root)
         self.objects[#self.objects + 1] = attachment
         local particle = make("ParticleEmitter", {
-            Name = spark and "FlyDBZEmbers" or "FlyDBZFlame", Enabled = false, Rate = 0,
+            Name = wake and "FlyDBZWakeFlame" or (spark and "FlyDBZEmbers" or "FlyDBZFlame"), Enabled = false, Rate = 0,
             Texture = spark and "rbxasset://textures/particles/sparkles_main.dds" or FIRE_TEXTURE,
             Color = gold, LightEmission = spark and 1 or 0.58, LightInfluence = 0, Brightness = spark and 4 or 3,
             Transparency = alpha, LocalTransparencyModifier = 1,
-            Lifetime = spark and NumberRange.new(0.45, 0.75) or NumberRange.new(0.55, 0.8),
-            Speed = spark and NumberRange.new(9, 14) or NumberRange.new(8, 11.5),
-            Acceleration = Vector3.new(0, 6.5, 0), Drag = 0.3,
-            EmissionDirection = Enum.NormalId.Top, SpreadAngle = Vector2.new(5, 5),
-            Orientation = spark and Enum.ParticleOrientation.FacingCamera or Enum.ParticleOrientation.VelocityParallel,
+            Lifetime = spark and NumberRange.new(0.3, 0.5) or (wake and NumberRange.new(0.28, 0.42) or NumberRange.new(0.4, 0.58)),
+            Speed = spark and NumberRange.new(6, 9) or (wake and NumberRange.new(7, 10) or NumberRange.new(5.5, 7.5)),
+            Acceleration = Vector3.new(0, 5, 0), Drag = 0.8,
+            EmissionDirection = Enum.NormalId.Top, SpreadAngle = Vector2.new(9, 9),
+            Orientation = Enum.ParticleOrientation.FacingCamera,
             Rotation = NumberRange.new(-8, 8), RotSpeed = NumberRange.new(-8, 8),
             LockedToPart = true, VelocityInheritance = 0, ZOffset = 0,
             Size = NumberSequence.new({
@@ -416,30 +437,30 @@ function Aura.new(root, humanoid)
             }),
         }, attachment)
         self.emitters[#self.emitters + 1] = {object = particle, anchor = attachment, origin = position,
-            gate = gate, rate = rate, phase = index * 1.79}
+            gate = gate, rate = rate, phase = index * 1.79, wake = wake == true}
     end
     for i = 1, 8 do
         local angle = i * math.pi / 4
-        emitterAt(Vector3.new(math.cos(angle) * radiusX, bottom, math.sin(angle) * radiusZ), 0, 2.25, 20, i, false)
+        emitterAt(Vector3.new(math.cos(angle) * radiusX, bottom, math.sin(angle) * radiusZ), 0, 1.95, 22, i, false)
     end
     for i = 1, 6 do
         local angle = i * math.pi / 3 + 0.3
         emitterAt(Vector3.new(math.cos(angle) * (radiusX + 0.5), bottom * 0.3, math.sin(angle) * (radiusZ + 0.35)),
-            0.28, 1.9, 13, i + 8, false)
+            0.28, 1.85, 18, i + 8, false, true)
     end
     for i = 1, 4 do
         local angle = i * math.pi / 2 + 0.15
-        emitterAt(Vector3.new(math.cos(angle) * radiusX, 1.2, math.sin(angle) * radiusZ), 0.6, 1.65, 9, i + 14, false)
-        emitterAt(Vector3.new(math.cos(angle) * radiusX, bottom, math.sin(angle) * radiusZ), 0.1, 0.12, 6, i + 18, true)
+        emitterAt(Vector3.new(math.cos(angle) * radiusX, 1.2, math.sin(angle) * radiusZ), 0.6, 1.4, 14, i + 14, false)
+        emitterAt(Vector3.new(math.cos(angle) * radiusX, bottom, math.sin(angle) * radiusZ), 0.1, 0.1, 5, i + 18, true)
     end
     local rimAlpha = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.08, 0.5),
-        NumberSequenceKeypoint.new(0.45, 0.55), NumberSequenceKeypoint.new(0.82, 0.72),
+        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.08, 0.62),
+        NumberSequenceKeypoint.new(0.45, 0.65), NumberSequenceKeypoint.new(0.82, 0.8),
         NumberSequenceKeypoint.new(1, 1),
     })
     local coreAlpha = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1, 0.16),
-        NumberSequenceKeypoint.new(0.55, 0.2), NumberSequenceKeypoint.new(0.9, 0.55),
+        NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.1, 0.32),
+        NumberSequenceKeypoint.new(0.55, 0.4), NumberSequenceKeypoint.new(0.9, 0.7),
         NumberSequenceKeypoint.new(1, 1),
     })
     local coreColor = ColorSequence.new({
@@ -448,7 +469,8 @@ function Aura.new(root, humanoid)
         ColorSequenceKeypoint.new(1, C(255, 225, 60)),
     })
     for i = 1, 8 do
-        local angle = i * math.pi / 4 + 0.09 * math.sin(i * 2.3)
+        local wake = i > 4
+        local angle = i * math.pi / 2 + 0.09 * math.sin(i * 2.3)
         local radial = Vector3.new(math.cos(angle), 0, math.sin(angle))
         local origin = Vector3.new(radial.X * radiusX, bottom, radial.Z * radiusZ)
         local start = make("Attachment", {Name = "FlyDBZRibbonBase", Position = origin,
@@ -461,20 +483,21 @@ function Aura.new(root, humanoid)
         for layer = 1, 2 do
             local core = layer == 2
             local ribbon = make("Beam", {
-                Name = core and "FlyDBZHotFlame" or "FlyDBZHeatEnvelope",
+                Name = wake and (core and "FlyDBZTailFlame" or "FlyDBZTailEnvelope")
+                    or (core and "FlyDBZHotFlame" or "FlyDBZHeatEnvelope"),
                 Attachment0 = start, Attachment1 = tip, Enabled = false, FaceCamera = true,
                 Segments = 16, Width0 = 0, Width1 = 0, CurveSize0 = 0, CurveSize1 = 0,
                 Texture = core and FIRE_TEXTURE or SMOKE_TEXTURE,
-                TextureMode = Enum.TextureMode.Wrap, TextureLength = 3.4 + i * 0.1,
-                TextureSpeed = 2.4 + i * 0.075, LightEmission = core and 0.65 or 0.5,
+                TextureMode = Enum.TextureMode.Wrap, TextureLength = 4.8 + i * 0.1,
+                TextureSpeed = 1.8 + i * 0.075, LightEmission = core and 0.65 or 0.5,
                 Brightness = core and 2.8 or 2.4, LightInfluence = 0,
                 Color = core and coreColor or gold, Transparency = core and coreAlpha or rimAlpha,
                 LocalTransparencyModifier = 1, ZOffset = 0,
             }, start)
-            layers[#layers + 1] = {object = ribbon, width = core and 2.3 or 3.8}
+            layers[#layers + 1] = {object = ribbon, width = core and 1.7 or 2.55}
         end
         self.ribbons[#self.ribbons + 1] = {start = start, tip = tip, origin = origin,
-            angle = angle, radiusX = radiusX, radiusZ = radiusZ,
+            angle = angle, radial = radial, wake = wake, radiusX = radiusX, radiusZ = radiusZ,
             phase = i * 1.73, gate = (i % 3) * 0.035,
             height = height * (0.84 + 0.16 * (0.5 + 0.5 * math.sin(i * 2.4))), layers = layers}
     end
@@ -485,12 +508,12 @@ function Aura.new(root, humanoid)
     self.trail = make("Trail", {Name = "FlyDBZMeteorTrail", Attachment0 = self.trailLeft,
         Attachment1 = self.trailRight, Enabled = false, FaceCamera = true,
         Texture = FIRE_TEXTURE, TextureMode = Enum.TextureMode.Wrap, TextureLength = 2.7,
-        Lifetime = 0.28, MaxLength = 16, MinLength = 0.12, LightEmission = 0.65,
+        Lifetime = 0.18, MaxLength = 8, MinLength = 0.16, LightEmission = 0.65,
         LightInfluence = 0, Brightness = 2.8, Color = gold, LocalTransparencyModifier = 1,
         WidthScale = NumberSequence.new({NumberSequenceKeypoint.new(0, 1),
             NumberSequenceKeypoint.new(0.35, 0.8), NumberSequenceKeypoint.new(1, 0)}),
-        Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.2),
-            NumberSequenceKeypoint.new(0.3, 0.32), NumberSequenceKeypoint.new(1, 1)}),
+        Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.52),
+            NumberSequenceKeypoint.new(0.3, 0.65), NumberSequenceKeypoint.new(1, 1)}),
     }, self.trailLeft)
     local lampAnchor = make("Attachment", {Name = "FlyDBZLightAnchor"}, root)
     self.objects[#self.objects + 1] = lampAnchor
@@ -500,7 +523,8 @@ function Aura.new(root, humanoid)
 end
 function Aura:Set(enabled)
     if enabled and not self.running then
-        self.reveal, self.motion, self.axis, self.across = 0, 0, Vector3.yAxis, Vector3.xAxis
+        self.reveal, self.motion, self.alignment, self.axis, self.across = 0, 0, 0, Vector3.yAxis, Vector3.xAxis
+        self.lastPosition = self.root.Position
         self.trail:Clear()
     end
     self.running = true
@@ -518,10 +542,23 @@ function Aura:Update(dt, velocity)
         -- Use the flight controller's smoothed world velocity, before the
         -- no-fall pulse. This prevents alternating zero-velocity VFX jitter.
         local direction, speed = unitAndSpeed(velocity or ZERO)
-        local strength = math.clamp(speed / 35, 0, 1)
-        local target = strength > 0 and turnAxis(Vector3.yAxis, -direction, strength) or Vector3.yAxis
-        self.axis = turnAxis(self.axis, target, 1 - math.exp(-6.5 * math.min(dt, 0.1)))
-        self.motion += (strength - self.motion) * (1 - math.exp(-5 * math.min(dt, 0.1)))
+        local step = math.min(dt, 0.1)
+        local strength = math.clamp((speed - 2.5) / 48, 0, 1)
+        strength = strength * strength * (3 - 2 * strength)
+        self.motion += (strength - self.motion) * (1 - math.exp(-7 * step))
+        local aligned = 0
+        if strength > 0 then
+            local target = -direction
+            local angle = math.acos(math.clamp(self.axis:Dot(target), -1, 1))
+            local blend = math.min(1 - math.exp(-10 * step), 4.8 * step / math.max(angle, 0.001))
+            self.axis = turnAxis(self.axis, target, blend)
+            aligned = math.clamp((self.axis:Dot(target) + 0.1) / 1.1, 0, 1) ^ 2
+        elseif self.motion < 0.005 then
+            -- Reset only when the wake is invisible, not by swinging it up
+            -- through the character when the joystick is released.
+            self.axis, self.across, self.motion = Vector3.yAxis, Vector3.xAxis, 0
+        end
+        self.alignment += (aligned - self.alignment) * (1 - math.exp(-12 * step))
     end
     -- Transport the previous perpendicular instead of changing reference axes
     -- at a vertical threshold, which would visibly rotate the flame ring.
@@ -531,52 +568,74 @@ function Aura:Update(dt, velocity)
     local axis = self.root.CFrame:VectorToObjectSpace(self.axis).Unit
     local across = self.root.CFrame:VectorToObjectSpace(self.across).Unit
     local around = axis:Cross(across).Unit
+    local wakeVisibility = self.motion * self.alignment
+    local coreAxis = (Vector3.yAxis + axis * (self.motion * 0.18)).Unit
+    local coreAcross = (Vector3.xAxis - coreAxis * coreAxis.X).Unit
     for _, ribbon in ipairs(self.ribbons) do
         local amount = math.clamp((level - ribbon.gate) / (1 - ribbon.gate), 0, 1)
+        if ribbon.wake then amount *= wakeVisibility end
         local growth = math.clamp((self.reveal - ribbon.gate) / (1 - ribbon.gate), 0, 1)
         local wave = math.sin(self.clock * 2.8 + ribbon.phase)
         local drift = math.sin(self.clock * 4.1 + ribbon.phase * 0.7) * 0.19
-        local rise = math.max(0.03, ribbon.height * growth * (1 + self.motion * 0.65) * (1 + 0.045 * wave))
-        local radial = across * math.cos(ribbon.angle) + around * math.sin(ribbon.angle)
-        local movingBase = -axis * 1.25 + across * (math.cos(ribbon.angle) * ribbon.radiusX)
-            + around * (math.sin(ribbon.angle) * math.max(ribbon.radiusZ, 1.35))
-        local origin = ribbon.origin:Lerp(movingBase, self.motion)
-        ribbon.start.Position = origin
-        ribbon.start.Axis = (axis * 0.88 + radial * 0.46).Unit
-        ribbon.tip.Position = origin + axis * rise - radial * (0.7 * growth)
-            + axis:Cross(radial) * (drift * growth)
-        ribbon.tip.Axis = (axis - radial * 0.18).Unit
+        local rise
+        if ribbon.wake then
+            local radial = across * math.cos(ribbon.angle) + around * math.sin(ribbon.angle)
+            local origin = axis * 0.3 + radial * 1.2
+            rise = math.max(0.03, (2.5 + self.motion * 3.3) * growth * (1 + 0.035 * wave))
+            ribbon.start.Position = origin
+            ribbon.start.Axis = (axis * 0.95 + radial * 0.25).Unit
+            ribbon.tip.Position = origin + axis * rise - radial * (0.75 * growth)
+                + axis:Cross(radial) * (drift * growth)
+            ribbon.tip.Axis = (axis - radial * 0.16).Unit
+        else
+            rise = math.max(0.03, ribbon.height * growth * (1 + 0.035 * wave))
+            ribbon.start.Position = ribbon.origin
+            ribbon.start.Axis = (Vector3.yAxis + ribbon.radial * 0.3).Unit
+            ribbon.tip.Position = ribbon.origin + Vector3.yAxis * rise
+                - ribbon.radial * (0.45 * growth) + axis * (self.motion * 0.55 * growth)
+                + Vector3.yAxis:Cross(ribbon.radial) * (drift * growth)
+            ribbon.tip.Axis = (Vector3.yAxis - ribbon.radial * 0.12).Unit
+        end
         for _, layer in ipairs(ribbon.layers) do
             local beam = layer.object
             beam.Enabled = amount > 0.005
             beam.LocalTransparencyModifier = 1 - amount
-            beam.Width0 = layer.width * amount * (0.92 + 0.08 * wave) * (1 + self.motion * 0.15)
+            beam.Width0 = layer.width * amount * (0.95 + 0.05 * wave)
             beam.Width1 = layer.width * 0.06 * amount
             beam.CurveSize0 = rise * (0.3 + 0.035 * wave)
             beam.CurveSize1 = rise * (0.19 + 0.03 * math.sin(self.clock * 2.1 + ribbon.phase))
         end
     end
-    local acceleration = self.axis * (7 + self.motion * 15)
     for _, item in ipairs(self.emitters) do
         local amount = math.clamp((level - item.gate) / (1 - item.gate), 0, 1)
+        if item.wake then amount *= wakeVisibility end
         local pulse = 0.9 + 0.1 * math.sin(self.clock * 3.1 + item.phase)
         item.object.LocalTransparencyModifier = 1 - amount
         item.object.Rate = item.rate * amount * pulse
         item.object.Enabled = amount > 0.005
-        local ring = across * (math.cos(item.phase) * 1.5) + around * (math.sin(item.phase) * 1.5)
-        local origin = item.origin:Lerp(-axis * 0.65 + ring, self.motion * 0.65)
-        item.anchor.CFrame = CFrame.fromMatrix(origin, across, axis)
-        item.object.Acceleration = acceleration
+        if item.wake then
+            local ring = across * math.cos(item.phase) + around * math.sin(item.phase)
+            item.anchor.CFrame = CFrame.fromMatrix(axis * 0.45 + ring * 1.1, across, axis)
+            item.object.Acceleration = self.axis * (5 + self.motion * 4)
+        else
+            -- Keep the emitting sites on the same body regions in every
+            -- direction. A restrained lean adds flow without relocating them.
+            item.anchor.CFrame = CFrame.fromMatrix(item.origin, coreAcross, coreAxis)
+            item.object.Acceleration = self.root.CFrame:VectorToWorldSpace(coreAxis) * 5
+        end
         if self.burst and level > 0.14 and item.gate == 0 then item.object:Emit(4) end
     end
     if level > 0.14 then self.burst = false end
-    self.trailLeft.Position = -across * 1.65
-    self.trailRight.Position = across * 1.65
-    local trailActive = self.targetOn and self.motion > 0.12 and level > 0.05
+    self.trailLeft.Position = -across * 1.1
+    self.trailRight.Position = across * 1.1
+    local position = self.root.Position
+    local jumped = self.lastPosition and (position - self.lastPosition).Magnitude > 24
+    self.lastPosition = position
+    local trailActive = self.targetOn and wakeVisibility > 0.3 and level > 0.05 and not jumped
+    if self.trailWasActive and (jumped or self.alignment < 0.35) then self.trail:Clear() end
     self.trail.Enabled = trailActive
-    self.trail.LocalTransparencyModifier = 1 - level * self.motion
-    if self.trailWasActive and not trailActive and self.motion < 0.04 then self.trail:Clear() end
-    self.trailWasActive = trailActive or (self.trailWasActive and self.motion >= 0.04)
+    self.trail.LocalTransparencyModifier = 1 - level * wakeVisibility
+    self.trailWasActive = trailActive
     self.lamp.Enabled = level > 0.005
     self.lamp.Brightness = level * (1.7 + 0.16 * math.sin(self.clock * 3.5))
     if level <= 0 and not self.burst then

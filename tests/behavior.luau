@@ -289,9 +289,13 @@ return function(source)
         w.step(60);noOwnedObjects(w)
     end)
     test('textured meteor envelope grows from feet with no rigid core lines', function()
-        local w,g,_,_,r=launch();local ribbons={}
-        for _,o in ipairs(r:GetDescendants()) do if o:IsA('Beam') then ribbons[#ribbons+1]=o end end
-        assert(#ribbons==16)
+        local w,g,_,_,r=launch();local ribbons={};local wake={}
+        for _,o in ipairs(r:GetDescendants()) do
+            if o:IsA('Beam') then
+                local group=o.Name:find('Tail') and wake or ribbons;group[#group+1]=o
+            end
+        end
+        assert(#ribbons==8 and #wake==8)
         for _,o in ipairs(ribbons) do
             assert(not o.Enabled and o.LocalTransparencyModifier==1 and o.Width0==0)
             assert(o.FaceCamera and o.Segments>=12 and o.TextureSpeed>0)
@@ -305,11 +309,12 @@ return function(source)
         w.step(60);local points={}
         for i,o in ipairs(ribbons) do
             assert(o.Enabled and o.LocalTransparencyModifier==0)
-            assert(o.Attachment1.Position.Y>2.4 and o.CurveSize0>1 and o.Width0>1.9)
+            assert(o.Attachment1.Position.Y>1.5 and o.CurveSize0>1 and o.Width0>1.5)
             points[i]=o.Attachment1.Position
         end
         w.step(15)
         for i,o in ipairs(ribbons) do assert(o.Attachment1.Position~=points[i],'static energy ribbon') end
+        for _,o in ipairs(wake) do assert(not o.Enabled,'directional tail appeared while hovering') end
         local upper=first.Attachment1.Position.Y
         click(g);w.step(8)
         assert(first.LocalTransparencyModifier>0 and first.LocalTransparencyModifier<1)
@@ -338,7 +343,7 @@ return function(source)
     test('meteor fire trails movement in all six directions and rises while hovering', function()
         local w,g,_,_,r=launch({playerModule=true});local V=w.env.Vector3
         click(g);w.step(120)
-        local flame=find(r,'FlyDBZFlame')
+        local flame=find(r,'FlyDBZWakeFlame')
         local function flow() return r.CFrame:VectorToWorldSpace(flame.Parent.CFrame.UpVector) end
         assert(flow():Dot(V.yAxis)>.99)
         local cases={
@@ -353,9 +358,9 @@ return function(source)
             w.move=case.move;w.env.workspace.CurrentCamera.CFrame.LookVector=case.look;w.step(120)
             assert(flow():Dot(case.tail)>.99,'flames did not follow world-space direction')
             assert(flame.Acceleration.Unit:Dot(case.tail)>.99)
-            local beam=find(r,'FlyDBZHotFlame')
+            local beam=find(r,'FlyDBZTailFlame')
             local displacement=r.CFrame:VectorToWorldSpace(beam.Attachment1.Position-beam.Attachment0.Position)
-            assert(displacement:Dot(case.tail)>7,'meteor envelope did not trail movement')
+            assert(displacement:Dot(case.tail)>4,'meteor wake did not trail movement')
             assert(find(r,'FlyDBZMeteorTrail').Enabled)
         end
         w.move=V.zero;w.step(180)
@@ -366,7 +371,7 @@ return function(source)
         local w,g,_,_,r=launch({playerModule=true});local V=w.env.Vector3
         r.CFrame=w.env.CFrame.fromMatrix(V.zero,V.new(0,0,-1),V.yAxis,V.xAxis)
         w.move=V.new(0,0,-1);click(g);w.step(120)
-        local flame=find(r,'FlyDBZFlame')
+        local flame=find(r,'FlyDBZWakeFlame')
         local function flow() return r.CFrame:VectorToWorldSpace(flame.Parent.CFrame.UpVector) end
         assert(flow():Dot(V.zAxis)>.99,'root rotation changed the world flow')
         w.move=V.new(0,0,1);local previous=flow()
@@ -398,11 +403,11 @@ return function(source)
         g:Destroy();noOwnedObjects(w)
     end)
     test('GUI fire stays alive without a character and follows a dragged panel', function()
-        local w,g,c=launch();w.step(60)
+        local w,g,c=launch();click(g);w.step(60)
         local layer=find(g,'WindowFireLayer');local sprite=find(layer,'GuiFlame')
         local window=find(g,'Window');local previous=sprite.Position
         w.player.CharacterRemoving:Fire(c);w.player.Character=nil;c.Parent=nil;w.step(20)
-        assert(sprite.ImageTransparency<1 and sprite.Position~=previous)
+        assert(layer.Visible and sprite.BackgroundTransparency<1 and sprite.Position~=previous)
         assert(not layer.Active and not sprite.Active,'decoration captures input')
         local input={UserInputType=w.env.Enum.UserInputType.Touch,Position=w.env.Vector3.new(50,50)}
         find(g,'DragHandle').InputBegan:Fire(input);input.Position=w.env.Vector3.new(130,90)
@@ -436,6 +441,62 @@ return function(source)
         local nextGui=find(w.pg,'FlyDBZ')
         assert(notice._destroying and find(nextGui,'QualityNotice').GroupTransparency==0)
         nextGui:Destroy();noOwnedObjects(w)
+    end)
+    test('panel fire is hidden in OFF, fades on toggles and stops sprite work when hidden', function()
+        local w,g=launch();local layer=find(g,'WindowFireLayer');local sprite=find(layer,'GuiFlame')
+        w.step(90);assert(not layer.Visible and sprite.BackgroundTransparency==1)
+        click(g);w.step(8)
+        assert(layer.Visible and sprite.BackgroundTransparency>0 and sprite.BackgroundTransparency<1)
+        w.step(60);local pool=layer:GetChildren()
+        click(g);w.step(6);assert(layer.Visible,'OFF cut the fire without a fade')
+        w.step(60);assert(not layer.Visible,'OFF left fire visible')
+        local position=sprite.Position;w.step(60);assert(sprite.Position==position,'hidden sprites still animated')
+        for _=1,6 do click(g);w.step(2) end
+        w.step(60);assert(not layer.Visible)
+        for _,object in ipairs(pool) do assert(object.Parent==layer and not object._destroying) end
+        assert(#layer:GetChildren()==#pool,'toggles created new UI fire objects')
+        g:Destroy();noOwnedObjects(w)
+    end)
+    test('core fire stays anchored to body regions while only the wake changes direction', function()
+        local w,g,_,_,r=launch({playerModule=true});local V=w.env.Vector3;click(g);w.step(90)
+        local anchors,tipPositions={},{}
+        for _,object in ipairs(r:GetDescendants()) do
+            if object:IsA('ParticleEmitter') and object.Name~='FlyDBZWakeFlame' then
+                anchors[object.Parent]=object.Parent.Position
+            elseif object.Name=='FlyDBZHotFlame' then
+                anchors[object.Attachment0]=object.Attachment0.Position
+                tipPositions[object.Attachment1]=object.Attachment1.Position
+            end
+        end
+        for _,look in ipairs({V.new(0,0,-1),V.new(0,0,1),V.xAxis,-V.xAxis,V.yAxis,-V.yAxis}) do
+            w.env.workspace.CurrentCamera.CFrame.LookVector=look;w.move=V.new(0,0,-1);w.step(120)
+            for anchor,position in pairs(anchors) do
+                assert(anchor.Position==position,'core emission site migrated away from the body')
+            end
+            for tip,position in pairs(tipPositions) do
+                assert((tip.Position-position).Magnitude<1.3,'body envelope swung into the wake')
+            end
+            assert(find(r,'FlyDBZFlame').LocalTransparencyModifier==0)
+            assert(find(r,'FlyDBZWakeFlame').Enabled)
+        end
+        g:Destroy();noOwnedObjects(w)
+    end)
+    test('reversals soften the wake and discontinuous positions cannot draw a long bridge', function()
+        local w,g,_,_,r=launch();local V=w.env.Vector3;w.keys.W=true;click(g);w.step(120)
+        local wake=find(r,'FlyDBZTailFlame');local core=find(r,'FlyDBZHotFlame')
+        local trail=find(r,'FlyDBZMeteorTrail');assert(trail.Enabled)
+        w.keys={S=true};local maximumFade=0
+        for _=1,50 do
+            w.step(2);maximumFade=math.max(maximumFade,wake.LocalTransparencyModifier)
+            assert(core.LocalTransparencyModifier==0,'turn dimmed the body aura')
+        end
+        assert(maximumFade>.75,'old-direction wake remained bright while reversing')
+        w.step(60);assert(wake.LocalTransparencyModifier<.02 and trail.Enabled)
+        local clears=trail.Cleared or 0
+        r.CFrame=w.env.CFrame.new(V.new(1000,0,0));w.step(2)
+        assert((trail.Cleared or 0)>clears and not trail.Enabled,'teleport joined distant trail points')
+        w.step(30);assert(trail.Enabled and trail.MaxLength<=8)
+        g:Destroy();noOwnedObjects(w)
     end)
     print(tostring(count)..' behavioral tests passed; Roblox visual/physics validation remains manual.')
 end
