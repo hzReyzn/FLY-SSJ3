@@ -91,6 +91,28 @@ return function(ownerGui, priority)
     function lease:restore()
         if not disposed and pending.Value == token then restorePending() end
     end
+    -- Other cooperating controllers read the real velocity even between the
+    -- zeroing and restoration phases. A correction invalidates that old pulse,
+    -- including corrections to zero, so it cannot be undone by a queued restore.
+    function lease:readVelocity(root)
+        local saved=not disposed and rootValue.Value
+        if saved and pending.Value and saved.Parent == characterValue.Value
+            and (saved==root or saved.AssemblyRootPart==root.AssemblyRootPart)
+            and root.AssemblyLinearVelocity == Vector3.zero then
+            return velocityValue.Value
+        end
+        return root.AssemblyLinearVelocity
+    end
+    function lease:writeVelocity(root, velocity)
+        if disposed or not root.Parent then return end
+        local saved=rootValue.Value
+        if saved and (saved==root or saved.AssemblyRootPart==root.AssemblyRootPart) then
+            pending.Value = nil
+            rootValue.Value = nil
+            characterValue.Value = nil
+        end
+        root.AssemblyLinearVelocity = velocity
+    end
     function lease:pulse(root)
         if not self:isOwner() then return false end
         self:restore()
@@ -352,9 +374,12 @@ local function resolveAnimation(packageId)
     return id
 end
 local function validBody(b)
+    local bottom=workspace.FallenPartsDestroyHeight
     return alive and not closing and body == b and not b.retired
+        and currentCharacter and currentCharacter:IsDescendantOf(workspace)
         and player.Character == currentCharacter and b.root.Parent == currentCharacter
         and b.humanoid.Parent == currentCharacter and b.humanoid.Health > 0
+        and (type(bottom)~="number" or b.root.Position.Y>bottom+4)
 end
 local function clearAnimations(b)
     b.animationGeneration += 1

@@ -16,7 +16,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/hzReyzn/FLY-SSJ3/main
 
 ## Muerte y reinicio
 
-Al morir, reiniciar o cambiar de personaje, el interruptor vuelve a **OFF**. Se retiran los controles físicos, se detienen y destruyen las pistas de animación, se cancela cualquier carga anterior y se desactiva No Fall Damage. Si había un pulso pendiente de velocidad, se restaura sin sobrescribir un cambio externo.
+Al morir, reiniciar o cambiar de personaje, el interruptor vuelve a **OFF**. También se desactiva al caer bajo el límite del vacío o cuando el personaje completo sale de Workspace, sin esperar a que Roblox destruya sus piezas. Se retiran los controles físicos, se detienen y destruyen las pistas de animación, se cancela cualquier carga anterior y se desactiva No Fall Damage. Si había un pulso pendiente de velocidad, se restaura sin sobrescribir un cambio externo.
 
 Reaparecer **no reactiva nada automáticamente**. Es necesario pulsar ON de nuevo con el personaje vivo y disponible. Pulsar mientras el personaje está muerto o incompleto no deja una activación pendiente. Reemplazar el Humanoid o la raíz también obliga a activar manualmente. Una suspensión temporal por asiento o anclaje, dentro del mismo personaje vivo, mantiene la solicitud de vuelo y reanuda al liberarse.
 
@@ -27,6 +27,8 @@ No Fall Damage conserva el filtro de Natural Disaster Survival (`PlaceId = 18970
 Mientras **No Fall Damage** de Reyzn X esté ON, la protección propia de FLY queda suspendida. El vuelo, su velocidad y la animación siguen funcionando. Al apagar la principal o cerrar el Hub, FLY recupera su protección únicamente si su interruptor continúa ON y el personaje es válido. Morir sigue dejando FLY completamente OFF; apagar la principal no lo reactiva.
 
 Ambos controladores comparten un registro local de prioridad y una sola velocidad pendiente. Antes de cambiar de propietario se termina la restauración anterior; los callbacks del otro controlador no pueden restaurar un pulso ajeno. Funciona con cualquiera de los dos órdenes de ejecución, sin depender de variables globales compartidas. Al cerrar ambos GUI se elimina el registro. No agrega efectos visuales ni cambia la versión 1.0.
+
+El coordinador también admite las correcciones de Walk on Water y Antifling de Reyzn X: pueden leer la velocidad previa a un pulso e invalidar una restauración obsoleta, incluso cuando corrigen a cero o comparten la estructura rígida de un vehículo. En el Hub, Walk on Water suspende sus plataformas durante el vuelo y Antifling no limita la velocidad intencional de FLY.
 
 El código del coordinador está en [`runtime/NoFallDamageLease.luau`](runtime/NoFallDamageLease.luau) y se incluye dentro del archivo distribuido. Después de modificarlo, ejecuta `python tools/build.py`. No se descarga código adicional en tiempo de ejecución.
 
@@ -52,6 +54,6 @@ Según la [documentación de Animator](https://create.roblox.com/docs/reference/
 python tests/run.py /ruta/a/luau
 ```
 
-Compilación Luau y **26 pruebas de comportamiento**: inicio apagado, ausencia de efectos/aviso, protección vinculada a ON, restauración de velocidad, filtros del juego, teclado/joystick, pérdida de foco, animaciones y permisos, muerte/reset, piezas y Animator tardíos o reemplazados, cancelación de cargas anteriores, reejecución, arrastre, cierre, límites de velocidad, pasos de 5, cambios durante el vuelo y conservación de ajustes tras morir.
+Compilación Luau y **28 pruebas de comportamiento**: inicio apagado, ausencia de efectos/aviso, protección vinculada a ON, restauración de velocidad, filtros del juego, teclado/joystick, pérdida de foco, animaciones y permisos, muerte/reset/vacío, retirada del personaje completo, piezas y Animator tardíos o reemplazados, cancelación de cargas anteriores, reejecución, arrastre, cierre, límites de velocidad, pasos de 5, cambios durante el vuelo y conservación de ajustes tras morir.
 
 Las pruebas verifican lógica y limpieza de recursos; **no ejecutan la física, el renderizado ni la replicación de Roblox**. La comprobación en la experiencia de destino sigue siendo manual. El repositorio Ghislain añade 15 escenarios de integración que ejecutan los dos scripts juntos, incluyendo cambios de prioridad entre pulsos, callbacks retrasados, muerte, reejecución y cierre.
